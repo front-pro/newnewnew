@@ -301,3 +301,107 @@ function HistoryTab({ role }) {
     </div>
   );
 }
+  function AuthScreen({ onAuth }) {
+  const [mode, setMode] = useState('login');
+  const [f, setF] = useState({ name: '', email: '', pass: '' });
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = k => e => setF({ ...f, [k]: e.target.value });
+  const submit = async e => {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try { onAuth(mode === 'login' ? await Auth.login(f.email, f.pass) : await Auth.register(f.name, f.email, f.pass)); }
+    catch (x) { setErr(x.message); setBusy(false); }
+  };
+  const inp = 'w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-xl px-3.5 py-2.5 text-sm outline-none transition bg-white';
+  const demo = [['admin@kt.kz', 'Admin123', 'admin'], ['employee@kt.kz', 'Employee123', 'employee'], ['user@kt.kz', 'User12345', 'user']];
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-5">
+        <div className="text-center space-y-2">
+          <div className="inline-block bg-gradient-to-br from-blue-600 to-cyan-500 text-white font-mono font-bold px-4 py-2.5 rounded-xl text-xl">KT</div>
+          <h1 className="text-2xl font-bold text-slate-900">Neural Document Agent</h1>
+          <p className="text-sm text-slate-500">Толық мүмкіндіктер үшін авторизация қажет, қонақ режимінде шектеулі жұмыс істеуге болады</p>
+        </div>
+        <form onSubmit={submit} className="card p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-sm font-medium">
+            {[['login', 'Кіру'], ['register', 'Тіркелу']].map(([id, l]) =>
+              <button type="button" key={id} onClick={() => { setMode(id); setErr(''); }}
+                className={`py-2 rounded-lg transition ${mode === id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>{l}</button>)}
+          </div>
+          {mode === 'register' && <input className={inp} placeholder="Аты-жөні" value={f.name} onChange={set('name')} />}
+          <input className={inp} type="email" placeholder="Email" value={f.email} onChange={set('email')} required />
+          <input className={inp} type="password" placeholder="Құпиясөз" value={f.pass} onChange={set('pass')} required />
+          {err && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl px-3 py-2 font-mono">{err}</div>}
+          <Btn type="submit" disabled={busy} className="w-full">{busy ? 'Тексерілуде...' : mode === 'login' ? 'Жүйеге кіру' : 'Тіркелу'}</Btn>
+          {mode === 'register' && <p className="text-xs text-slate-500">Жаңа аккаунт «Пайдаланушы» рөлімен құрылады. Қызметкер/әкімші рөлін тек әкімші береді.</p>}
+        </form>
+        <button type="button" onClick={() => onAuth({ email: '', name: 'Қонақ', role: 'guest' })}
+          className="w-full border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-white text-slate-700 rounded-xl py-2.5 text-sm font-medium transition">
+          👤 Қонақ ретінде жалғастыру
+          <span className="block text-xs font-normal text-slate-400">Құжаттарды жүктеу және ЖИ талдауы, нәтиже сақталмайды</span>
+        </button>
+        <div className="card p-4 space-y-2">
+          <p className="text-xs font-semibold text-slate-500">Демо аккаунттар (басып толтырыңыз):</p>
+          {demo.map(([e, p, r]) =>
+            <button type="button" key={e} onClick={() => { setMode('login'); setF({ ...f, email: e, pass: p }); setErr(''); }}
+              className="w-full flex justify-between items-center font-mono text-xs bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-lg px-3 py-2 transition">
+              <span className="text-slate-700">{e}</span><Badge tone={r === 'admin' ? 'red' : r === 'employee' ? 'blue' : 'green'}>{r}</Badge>
+            </button>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UsersTab({ me, notify }) {
+  const [list, setList] = useState(ACCOUNTS);
+  if (!can(me.role, 'user.manage')) return <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl text-sm"><b>403 Forbidden:</b> бұл бөлім тек әкімшіге арналған.</div>;
+  const change = (email, role) => {
+    ACCOUNTS = ACCOUNTS.map(a => a.email === email ? { ...a, role } : a);
+    setList(ACCOUNTS); notify(`${email} рөлі: ${role}`, 'green');
+  };
+  return (
+    <div className="space-y-6">
+      <Head title="Пайдаланушыларды басқару" sub="Аккаунттарға рөл беру (RBAC) — тек әкімші" />
+      <div className="card overflow-hidden divide-y divide-slate-100">
+        {list.map(a =>
+          <div key={a.email} className="p-4 flex flex-col md:flex-row justify-between md:items-center gap-2">
+            <div><p className="font-medium text-slate-800 text-sm">{a.name}</p><p className="font-mono text-xs text-slate-400">{a.email}</p></div>
+            <select value={a.role} disabled={a.email === me.email} onChange={e => change(a.email, e.target.value)}
+              className="font-mono text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-blue-700 disabled:opacity-50">
+              {Object.keys(ROLE_LABEL).map(r => <option key={r} value={r}>{r} · {ROLE_LABEL[r]}</option>)}
+            </select>
+          </div>)}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [tab, setTab] = useState('compare');
+  const [toast, setToast] = useState(null);
+  const notify = (msg, tone = 'blue') => { setToast({ msg, tone }); setTimeout(() => setToast(null), 3000); };
+  if (!user) return <AuthScreen onAuth={u => { setUser(u); setTab('compare'); }} />;
+  const role = user.role;
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Navbar user={user} onLogout={() => setUser(null)} tab={tab} setTab={setTab} />
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6">
+        {tab === 'compare' && <CompareTab role={role} notify={notify} onLogin={() => setUser(null)} />}
+        {tab === 'templates' && <TemplatesTab role={role} onLogin={() => setUser(null)} />}
+        {tab === 'editor' && <EditorTab role={role} notify={notify} />}
+        {tab === 'history' && <HistoryTab role={role} />}
+        {tab === 'users' && <UsersTab me={user} notify={notify} />}
+      </main>
+      <footer className="border-t border-slate-200 bg-white/70 py-4 text-center font-mono text-xs text-slate-400">KT Neural Document Agent v2.0 · Барлық құқықтар қорғалған</footer>
+      {toast && <div className={`fixed bottom-6 right-6 z-50 border px-4 py-3 rounded-xl text-sm shadow-lg ${TONE[toast.tone]}`}>{toast.msg}</div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
+
