@@ -242,3 +242,26 @@ function TemplatesTab({ role, onLogin }) {
     </div>
   );
 }
+function HistoryTab({ role }) {
+  const rows = [
+    ['ЖИ талдауы', 'blue', 'Ереже v8 vs Ереже v9 (Қайта құрылымдау)', '2026-10-30 14:20 · 14 өзгеріс анықталды', 'Нәтижені ашу'],
+    ['Редактор', 'green', 'Департамент ережесі (Жаңа редакция)', '2026-10-29 11:05 · v2.0 (өңделді)', 'Құжатты өңдеу'],
+    ['Үлгі', 'violet', 'Қызметтік жазба (үлгі бойынша жасалған)', '2026-10-28 09:40 · v1.0', 'Қарау']
+  ];
+  return (
+    <div className="space-y-6">
+      <Head title="Әрекеттер тарихы" sub="Сақталған талдаулар, нұсқалар мен құжаттар журналы" />
+      {!can(role, 'history.read.own') ?
+        <div className="card p-12 text-center text-slate-500 text-sm">Қонақтардың әрекеттер тарихы сақталмайды. Жеке тарихыңызға қол жеткізу үшін жүйеге кіріңіз.</div> :
+        <div className="card overflow-hidden divide-y divide-slate-100">
+          {rows.map(([t, tone, title, meta, btn]) =>
+            <div key={title} className="p-4 flex flex-col md:flex-row justify-between md:items-center gap-2 hover:bg-blue-50/40 transition">
+              <div><div className="flex items-center gap-2 flex-wrap"><Badge tone={tone}>{t}</Badge><h4 className="font-medium text-slate-800 text-sm">{title}</h4></div>
+                <p className="font-mono text-xs text-slate-400 mt-1">{meta}</p></div>
+              <Btn kind="ghost" className="!text-xs !py-1.5 self-start">{btn}</Btn>
+            </div>)}
+        </div>}
+    </div>
+  );
+}
+
