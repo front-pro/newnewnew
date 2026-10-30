@@ -212,3 +212,92 @@ function CompareTab({ role, notify, onLogin }) {
   );
 }
 
+function Tpl({ tag, tone, title, text, btn, kind }) {
+  return (
+    <div className="card p-5 flex flex-col justify-between gap-4 hover:shadow-md transition">
+      <div className="space-y-2"><Badge tone={tone}>{tag}</Badge><h3 className="font-bold text-slate-900">{title}</h3><p className="text-xs text-slate-500">{text}</p></div>
+      <Btn kind={kind} className="w-full">{btn}</Btn>
+    </div>
+  );
+}
+
+function TemplatesTab({ role, onLogin }) {
+  const emp = can(role, 'template.read.employee');
+  return (
+    <div className="space-y-6">
+      <Head title="Құжат үлгілерінің кітапханасы" sub="Нормативтік және ұйымдастырушылық құжаттар каталогы" />
+      {!can(role, 'template.read.public') ?
+        <div className="card p-12 text-center space-y-3">
+          <div className="text-4xl">🔒</div>
+          <h3 className="text-lg font-bold">Үлгілер кітапханасы жабық</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">Үлгілерді көру және олар бойынша құжат жасау үшін жүйеге тіркеліңіз немесе кіріңіз.</p>
+          <Btn onClick={onLogin}>Жүйеге кіру</Btn>
+        </div> :
+        <div className="grid md:grid-cols-3 gap-6">
+          <Tpl tag="Жалпы · Public" tone="green" title="Қызметтік жазба үлгісі" text="Барлық тіркелген пайдаланушылар үшін негізгі ішкі хат алмасу форматы." btn="Үлгіні ашу & қолдану" kind="ghost" />
+          <Tpl tag="Жалпы · Public" tone="green" title="Еңбек шартына қосымша келісім" text="Кадрлық өзгерістерді тіркеуге арналған стандартты келісім үлгісі." btn="Үлгіні ашу & қолдану" kind="ghost" />
+          {emp ?
+            <Tpl tag="Корпоративтік · Employee" tone="blue" title="Бөлімше ережесі & функциялар матрицасы" text="Қайта құрылымдау кезіндегі ішкі департамент регламенті." btn="Құжат жасау" kind="primary" /> :
+            <div className="opacity-60"><Tpl tag="Құлыпталған 🔒" tone="red" title="Бөлімше ережесі (Корпоративтік)" text="Тек компанияның расталған қызметкерлеріне қолжетімді." btn="Қолжетімсіз" kind="ghost" /></div>}
+        </div>}
+    </div>
+  );
+}
+
+function EditorTab({ role, notify }) {
+  const canEdit = can(role, 'doc.edit');
+  const [v, setV] = useState(1);
+  const [txt, setTxt] = useState(`1. ЖАЛПЫ ЕРЕЖЕЛЕР
+1.1. Осы Департамент туралы ереже ұйымның құрылымдық бөлімшесінің мәртебесін белгілейді.
+1.2. Департамент өз қызметінде ҚР заңнамасын және Ішкі регламентті басшылыққа алады.
+
+2. НЕГІЗГІ МІНДЕТТЕРІ МЕН ФУНКЦИЯЛАРЫ
+2.1. Жасанды интеллект негізіндегі құжаттарды автоматты семантикалық талдауды қамтамасыз ету.
+2.2. Нормативтік құжаттардың редакциялары арасындағы функционалдық қақтығыстарды анықтау.`);
+  return (
+    <div className="space-y-6">
+      <Head title="Құжат редакторы" sub="Тармақтық нумерацияны және нұсқалар тарихын сақтау модулі">
+        <div className="flex items-center gap-3">
+          <Badge tone="slate">нұсқа: v{v}.0</Badge>
+          {canEdit && <Btn kind="green" onClick={() => { setV(v + 1); notify(`Сақталды! Жаңа нұсқа: v${v + 1}.0`, 'green'); }}>💾 Сақтау (жаңа нұсқа)</Btn>}
+        </div>
+      </Head>
+      {!canEdit ?
+        <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl text-sm"><b>Қолжетімділік шектелген:</b> қонақ режимінде құжаттарды өңдеу және сақтау мүмкіндігі жабық.</div> :
+        <div className="space-y-2">
+          <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border-b border-slate-200">
+              <i className="w-2.5 h-2.5 rounded-full bg-rose-300"></i><i className="w-2.5 h-2.5 rounded-full bg-amber-300"></i><i className="w-2.5 h-2.5 rounded-full bg-emerald-300"></i>
+              <span className="ml-2 font-mono text-xs text-slate-500">Департамент_ережесі.txt</span>
+            </div>
+            <textarea value={txt} onChange={e => setTxt(e.target.value)} spellCheck="false"
+              className="w-full h-96 p-5 font-mono text-sm leading-relaxed text-slate-800 outline-none focus:bg-blue-50/30 resize-none" />
+          </div>
+          <div className="flex justify-between font-mono text-xs text-slate-400 px-1"><span>Автосақтау белсенді (30 сек)</span><span>Тармақтар сақталған (1.1, 1.2, 2.1...)</span></div>
+        </div>}
+    </div>
+  );
+}
+
+function HistoryTab({ role }) {
+  const rows = [
+    ['ЖИ талдауы', 'blue', 'Ереже v8 vs Ереже v9 (Қайта құрылымдау)', '2026-10-30 14:20 · 14 өзгеріс анықталды', 'Нәтижені ашу'],
+    ['Редактор', 'green', 'Департамент ережесі (Жаңа редакция)', '2026-10-29 11:05 · v2.0 (өңделді)', 'Құжатты өңдеу'],
+    ['Үлгі', 'violet', 'Қызметтік жазба (үлгі бойынша жасалған)', '2026-10-28 09:40 · v1.0', 'Қарау']
+  ];
+  return (
+    <div className="space-y-6">
+      <Head title="Әрекеттер тарихы" sub="Сақталған талдаулар, нұсқалар мен құжаттар журналы" />
+      {!can(role, 'history.read.own') ?
+        <div className="card p-12 text-center text-slate-500 text-sm">Қонақтардың әрекеттер тарихы сақталмайды. Жеке тарихыңызға қол жеткізу үшін жүйеге кіріңіз.</div> :
+        <div className="card overflow-hidden divide-y divide-slate-100">
+          {rows.map(([t, tone, title, meta, btn]) =>
+            <div key={title} className="p-4 flex flex-col md:flex-row justify-between md:items-center gap-2 hover:bg-blue-50/40 transition">
+              <div><div className="flex items-center gap-2 flex-wrap"><Badge tone={tone}>{t}</Badge><h4 className="font-medium text-slate-800 text-sm">{title}</h4></div>
+                <p className="font-mono text-xs text-slate-400 mt-1">{meta}</p></div>
+              <Btn kind="ghost" className="!text-xs !py-1.5 self-start">{btn}</Btn>
+            </div>)}
+        </div>}
+    </div>
+  );
+}
