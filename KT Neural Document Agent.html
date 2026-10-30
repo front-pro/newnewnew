@@ -315,3 +315,54 @@ function AuthScreen({ onAuth }) {
     </div>
   );
 }
+function UsersTab({ me, notify }) {
+  const [list, setList] = useState(ACCOUNTS);
+  if (!can(me.role, 'user.manage')) return <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl text-sm"><b>403 Forbidden:</b> бұл бөлім тек әкімшіге арналған.</div>;
+  const change = (email, role) => {
+    ACCOUNTS = ACCOUNTS.map(a => a.email === email ? { ...a, role } : a);
+    setList(ACCOUNTS); notify(`${email} рөлі: ${role}`, 'green');
+  };
+  return (
+    <div className="space-y-6">
+      <Head title="Пайдаланушыларды басқару" sub="Аккаунттарға рөл беру (RBAC) — тек әкімші" />
+      <div className="card overflow-hidden divide-y divide-slate-100">
+        {list.map(a =>
+          <div key={a.email} className="p-4 flex flex-col md:flex-row justify-between md:items-center gap-2">
+            <div><p className="font-medium text-slate-800 text-sm">{a.name}</p><p className="font-mono text-xs text-slate-400">{a.email}</p></div>
+            <select value={a.role} disabled={a.email === me.email} onChange={e => change(a.email, e.target.value)}
+              className="font-mono text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-blue-700 disabled:opacity-50">
+              {Object.keys(ROLE_LABEL).map(r => <option key={r} value={r}>{r} · {ROLE_LABEL[r]}</option>)}
+            </select>
+          </div>)}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [tab, setTab] = useState('compare');
+  const [toast, setToast] = useState(null);
+  const notify = (msg, tone = 'blue') => { setToast({ msg, tone }); setTimeout(() => setToast(null), 3000); };
+  if (!user) return <AuthScreen onAuth={u => { setUser(u); setTab('compare'); }} />;
+  const role = user.role;
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Navbar user={user} onLogout={() => setUser(null)} tab={tab} setTab={setTab} />
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6">
+        {tab === 'compare' && <CompareTab role={role} notify={notify} onLogin={() => setUser(null)} />}
+        {tab === 'templates' && <TemplatesTab role={role} onLogin={() => setUser(null)} />}
+        {tab === 'editor' && <EditorTab role={role} notify={notify} />}
+        {tab === 'history' && <HistoryTab role={role} />}
+        {tab === 'users' && <UsersTab me={user} notify={notify} />}
+      </main>
+      <footer className="border-t border-slate-200 bg-white/70 py-4 text-center font-mono text-xs text-slate-400">KT Neural Document Agent v2.0 · Барлық құқықтар қорғалған</footer>
+      {toast && <div className={`fixed bottom-6 right-6 z-50 border px-4 py-3 rounded-xl text-sm shadow-lg ${TONE[toast.tone]}`}>{toast.msg}</div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
