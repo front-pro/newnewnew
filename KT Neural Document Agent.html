@@ -57,3 +57,73 @@ const Auth = {
     return { email: a.email, name: a.name, role: a.role };
   }
 };
+const MockBackend = {
+  async runAnalysis(role) {
+    if (!can(role, 'analysis.run')) throw new Error('403 Forbidden: Рұқсат шектелген');
+    await new Promise(r => setTimeout(r, 1200));
+    return {
+      summary: 'Ұйымды қайта құрылымдау бойынша «Ереже v8» мен «Ереже v9» редакциялары семантикалық тұрғыдан салыстырылды.',
+      metrics: { total: 14, conflicts: 2, lost: 1, news: 1 },
+      changes: [
+        { id: 1, type: 'NEW_DEPT', title: 'Жаңа құрылымдық бөлімше', description: '«ДИТААД» (Департамент) жаңадан құрылып, АТ инфрақұрылымы мен AI агенттерді бақылау функциясы берілді.', a: 'Жоқ', b: '2.1-тармақ' },
+        { id: 2, type: 'CONFLICT', title: 'Overlapping / Мүдделер қақтығысы', description: 'Ақпараттық жүйелердің қауіпсіздігін тексеру және әзірлеу функциясы бір бөлімге (ДОА) жүктелген. Бақылаушы мен орындаушы функциялары біріккен.', a: '3.4-тармақ', b: '3.5-тармақ' },
+        { id: 3, type: 'LOST_FUNCTION', title: 'Жоғалған функция (Lost Function)', description: 'Құжаттарды архивтеу және қағаз нұсқасын сақтау міндеті жаңа редакцияда мүлдем белгіленбеген.', a: '5.3.2-тармақ', b: 'Жоқ (Жоғалған)' }
+      ],
+      isSaved: role !== 'guest'
+    };
+  }
+};
+
+const TONE = {
+  blue: 'bg-blue-50 text-blue-700 border-blue-200',
+  red: 'bg-rose-50 text-rose-700 border-rose-200',
+  amber: 'bg-amber-50 text-amber-700 border-amber-200',
+  green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  violet: 'bg-violet-50 text-violet-700 border-violet-200',
+  slate: 'bg-slate-100 text-slate-600 border-slate-200'
+};
+const Badge = ({ tone = 'blue', children }) =>
+  <span className={`font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md border ${TONE[tone]}`}>{children}</span>;
+
+const Head = ({ title, sub, children }) =>
+  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+    <div>
+      <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+      <p className="text-sm text-slate-500 mt-0.5">{sub}</p>
+    </div>
+    {children}
+  </div>;
+
+const Btn = ({ kind = 'primary', ...p }) => {
+  const k = { primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/20', ghost: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200', green: 'bg-emerald-600 hover:bg-emerald-700 text-white' }[kind];
+  return <button {...p} className={`${k} disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm px-4 py-2 rounded-xl transition ${p.className || ''}`} />;
+};
+
+const TABS = [['compare', 'Талдау (A/B)'], ['templates', 'Үлгілер'], ['editor', 'Редактор'], ['history', 'Тарих'], ['users', 'Пайдаланушылар']];
+
+function Navbar({ user, onLogout, tab, setTab }) {
+  const tabs = TABS.filter(t => t[0] !== 'users' || can(user.role, 'user.manage'));
+  return (
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-4 md:px-6 py-3 flex flex-col md:flex-row items-center justify-between gap-3">
+      <div className="flex items-center gap-5 flex-wrap justify-center">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setTab('compare')}>
+          <div className="bg-gradient-to-br from-blue-600 to-cyan-500 text-white font-mono font-bold px-2.5 py-1.5 rounded-lg text-sm">KT</div>
+          <span className="font-bold text-slate-800">Neural Agent</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5">● online</span>
+        </div>
+        <nav className="flex gap-1 text-sm font-medium flex-wrap justify-center">
+          {tabs.map(([id, label]) =>
+            <button key={id} onClick={() => setTab(id)}
+              className={`px-3 py-1.5 rounded-lg transition ${tab === id ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`}>{label}</button>)}
+        </nav>
+      </div>
+      <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg pl-3 pr-1.5 py-1.5">
+        <div className="leading-tight text-right">
+          <p className="text-xs font-semibold text-slate-800">{user.name}</p>
+          <p className="font-mono text-[11px] text-blue-700">{user.role}</p>
+        </div>
+        <Btn kind="ghost" onClick={onLogout} className="!py-1 !px-3 !text-xs">{user.role === 'guest' ? 'Кіру' : 'Шығу'}</Btn>
+      </div>
+    </header>
+  );
+}
