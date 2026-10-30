@@ -1,6 +1,5 @@
 <html lang="kk">
 <head><!DOCTYPE html>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>KT Neural Document Agent</title>
@@ -14,3 +13,232 @@ body{background:#f3f7fd;background-image:radial-gradient(#cddbf0 1px,transparent
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:1rem;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 @keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin 1s linear infinite}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+</head>
+<body class="font-sans antialiased">
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+const PERMS = {
+  guest: ['doc.upload','analysis.run'],
+  user: ['doc.upload','analysis.run','analysis.export','analysis.save','doc.edit','template.read.public','history.read.own'],
+  employee: ['doc.upload','analysis.run','analysis.export','analysis.save','doc.edit','template.read.public','template.read.employee','history.read.own'],
+  admin: ['doc.upload','analysis.run','analysis.export','analysis.save','doc.edit','template.read.public','template.read.employee','history.read.own','user.manage']
+};
+const can = (role, p) => PERMS[role]?.includes(p) ?? false;
+
+const ROLE_LABEL = { user: 'Пайдаланушы', employee: 'Қызметкер', admin: 'Әкімші' };
+let ACCOUNTS = [
+  { email: 'admin@kt.kz', pass: 'Admin123', name: 'Әкімші', role: 'admin' },
+  { email: 'employee@kt.kz', pass: 'Employee123', name: 'Қызметкер', role: 'employee' },
+  { email: 'user@kt.kz', pass: 'User12345', name: 'Пайдаланушы', role: 'user' }
+];
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const Auth = {
+  async login(email, pass) {
+    await wait(600);
+    const a = ACCOUNTS.find(x => x.email === email.trim().toLowerCase() && x.pass === pass);
+    if (!a) throw new Error('401: Email немесе құпиясөз қате');
+    return { email: a.email, name: a.name, role: a.role };
+  },
+  async register(name, email, pass) {
+    await wait(600);
+    const e = email.trim().toLowerCase();
+    if (!name.trim()) throw new Error('Атыңызды енгізіңіз');
+    if (!/^\S+@\S+\.\S+$/.test(e)) throw new Error('Email форматы дұрыс емес');
+    if (pass.length < 8) throw new Error('Құпиясөз кемінде 8 таңба болуы керек');
+    if (ACCOUNTS.some(x => x.email === e)) throw new Error('409: Бұл email тіркелген');
+    const a = { email: e, pass, name: name.trim(), role: 'user' };
+    ACCOUNTS = [...ACCOUNTS, a];
+    return { email: a.email, name: a.name, role: a.role };
+  }
+};
+const MockBackend = {
+  async runAnalysis(role) {
+    if (!can(role, 'analysis.run')) throw new Error('403 Forbidden: Рұқсат шектелген');
+    await new Promise(r => setTimeout(r, 1200));
+    return {
+      summary: 'Ұйымды қайта құрылымдау бойынша «Ереже v8» мен «Ереже v9» редакциялары семантикалық тұрғыдан салыстырылды.',
+      metrics: { total: 14, conflicts: 2, lost: 1, news: 1 },
+      changes: [
+        { id: 1, type: 'NEW_DEPT', title: 'Жаңа құрылымдық бөлімше', description: '«ДИТААД» (Департамент) жаңадан құрылып, АТ инфрақұрылымы мен AI агенттерді бақылау функциясы берілді.', a: 'Жоқ', b: '2.1-тармақ' },
+        { id: 2, type: 'CONFLICT', title: 'Overlapping / Мүдделер қақтығысы', description: 'Ақпараттық жүйелердің қауіпсіздігін тексеру және әзірлеу функциясы бір бөлімге (ДОА) жүктелген. Бақылаушы мен орындаушы функциялары біріккен.', a: '3.4-тармақ', b: '3.5-тармақ' },
+        { id: 3, type: 'LOST_FUNCTION', title: 'Жоғалған функция (Lost Function)', description: 'Құжаттарды архивтеу және қағаз нұсқасын сақтау міндеті жаңа редакцияда мүлдем белгіленбеген.', a: '5.3.2-тармақ', b: 'Жоқ (Жоғалған)' }
+      ],
+      isSaved: role !== 'guest'
+    };
+  }
+};
+
+const TONE = {
+  blue: 'bg-blue-50 text-blue-700 border-blue-200',
+  red: 'bg-rose-50 text-rose-700 border-rose-200',
+  amber: 'bg-amber-50 text-amber-700 border-amber-200',
+  green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  violet: 'bg-violet-50 text-violet-700 border-violet-200',
+  slate: 'bg-slate-100 text-slate-600 border-slate-200'
+};
+const Badge = ({ tone = 'blue', children }) =>
+  <span className={`font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md border ${TONE[tone]}`}>{children}</span>;
+
+const Head = ({ title, sub, children }) =>
+  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+    <div>
+      <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+      <p className="text-sm text-slate-500 mt-0.5">{sub}</p>
+    </div>
+    {children}
+  </div>;
+
+const Btn = ({ kind = 'primary', ...p }) => {
+  const k = { primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/20', ghost: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200', green: 'bg-emerald-600 hover:bg-emerald-700 text-white' }[kind];
+  return <button {...p} className={`${k} disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm px-4 py-2 rounded-xl transition ${p.className || ''}`} />;
+};
+
+const TABS = [['compare', 'Талдау (A/B)'], ['templates', 'Үлгілер'], ['editor', 'Редактор'], ['history', 'Тарих'], ['users', 'Пайдаланушылар']];
+
+function Navbar({ user, onLogout, tab, setTab }) {
+  const tabs = TABS.filter(t => t[0] !== 'users' || can(user.role, 'user.manage'));
+  return (
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-4 md:px-6 py-3 flex flex-col md:flex-row items-center justify-between gap-3">
+      <div className="flex items-center gap-5 flex-wrap justify-center">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setTab('compare')}>
+          <div className="bg-gradient-to-br from-blue-600 to-cyan-500 text-white font-mono font-bold px-2.5 py-1.5 rounded-lg text-sm">KT</div>
+          <span className="font-bold text-slate-800">Neural Agent</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5">● online</span>
+        </div>
+        <nav className="flex gap-1 text-sm font-medium flex-wrap justify-center">
+          {tabs.map(([id, label]) =>
+            <button key={id} onClick={() => setTab(id)}
+              className={`px-3 py-1.5 rounded-lg transition ${tab === id ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`}>{label}</button>)}
+        </nav>
+      </div>
+      <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg pl-3 pr-1.5 py-1.5">
+        <div className="leading-tight text-right">
+          <p className="text-xs font-semibold text-slate-800">{user.name}</p>
+          <p className="font-mono text-[11px] text-blue-700">{user.role}</p>
+        </div>
+        <Btn kind="ghost" onClick={onLogout} className="!py-1 !px-3 !text-xs">{user.role === 'guest' ? 'Кіру' : 'Шығу'}</Btn>
+      </div>
+    </header>
+  );
+}
+
+function DropZone({ title, name }) {
+  return (
+    <div className="card p-5 space-y-3">
+      <div className="flex justify-between items-center">
+        <h3 className="font-semibold text-slate-800 text-sm">{title}</h3>
+        <span className="font-mono text-[11px] text-slate-400">PDF, DOCX · ≤20MB</span>
+      </div>
+      <div className="border-2 border-dashed border-blue-200 hover:border-blue-400 hover:bg-blue-50/40 rounded-xl p-7 text-center transition cursor-pointer bg-slate-50/60">
+        <div className="text-3xl mb-1">📄</div>
+        <p className="font-mono text-sm font-semibold text-slate-700">{name}</p>
+        <p className="text-xs text-slate-500 mt-1">Ауыстыру үшін басыңыз немесе файлды сүйреңіз</p>
+      </div>
+    </div>
+  );
+}
+
+function CompareTab({ role, notify, onLogin }) {
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState(null);
+  const run = async () => {
+    setLoading(true);
+    try { setRes(await MockBackend.runAnalysis(role)); }
+    catch (e) { notify(e.message, 'red'); }
+    finally { setLoading(false); }
+  };
+  const tone = { CONFLICT: 'red', LOST_FUNCTION: 'amber', NEW_DEPT: 'blue' };
+  const M = res && [['Барлық өзгерістер', res.metrics.total, 'text-slate-900'], ['Қақтығыстар', res.metrics.conflicts, 'text-rose-600'], ['Жоғалған функциялар', res.metrics.lost, 'text-amber-600'], ['Жаңа бөлімдер', res.metrics.news, 'text-blue-600']];
+  return (
+    <div className="space-y-6">
+      <Head title="Құжаттарды семантикалық салыстыру" sub="«Дейін» және «Кейін» редакцияларын ЖИ арқылы талдау (Neural Core Engine)">
+        <Btn onClick={run} disabled={loading}>
+          {loading ? <span className="flex items-center gap-2"><span className="spin inline-block">⏳</span>Талдануда...</span> : '⚡ ЖИ талдауын іске қосу'}
+        </Btn>
+      </Head>
+
+      {role === 'guest' &&
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm flex flex-wrap justify-between items-center gap-2">
+          <span><b>Қонақ режимі:</b> құжаттарды жүктеп, талдауды іске қосуға болады. Нәтиже сақталмайды, экспорт пен редактор жабық.</span>
+          <Btn onClick={onLogin} className="!py-1 !px-3 !text-xs">Кіру / Тіркелу</Btn>
+        </div>}
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <DropZone title="Құжат A (Редакция «Дейін»)" name="Ереже_v8.docx" />
+        <DropZone title="Құжат B (Редакция «Кейін»)" name="Ереже_v9_жоба.docx" />
+      </div>
+
+      {res &&
+        <div className="card p-6 space-y-6">
+          <div className="flex flex-col md:flex-row justify-between gap-4 pb-4 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-slate-900">Талдау қорытындысы</h2>
+                {res.isSaved ? <Badge tone="green">Сақталды</Badge> : <Badge tone="slate">Уақытша режим</Badge>}
+              </div>
+              <p className="text-sm text-slate-600 mt-1">{res.summary}</p>
+            </div>
+            <Btn kind="ghost" className="self-start" onClick={() => can(role, 'analysis.export') ? notify('Есеп CSV/PDF форматында жүктелді', 'green') : notify('Экспорттау үшін жүйеге кіру қажет!', 'amber')}>📥 Экспорттау</Btn>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {M.map(([l, v, c]) =>
+              <div key={l} className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <span className="text-xs text-slate-500">{l}</span>
+                <p className={`font-mono text-3xl font-bold mt-1 ${c}`}>{v}</p>
+              </div>)}
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="font-semibold text-slate-800">Source Trace &amp; Agent Insight</h3>
+            {res.changes.map(c =>
+              <div key={c.id} className="border border-slate-200 rounded-xl p-4 space-y-3 bg-white hover:border-blue-300 transition">
+                <div className="flex items-center gap-2 flex-wrap"><Badge tone={tone[c.type]}>{c.type}</Badge><h4 className="font-semibold text-slate-800">{c.title}</h4></div>
+                <p className="text-sm text-slate-600">{c.description}</p>
+                <div className="flex flex-wrap items-center gap-3 font-mono text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-500">
+                  <span>📍 A: <u className="text-blue-600 cursor-pointer">{c.a}</u></span><span>➔</span>
+                  <span>📍 B: <u className="text-blue-600 cursor-pointer">{c.b}</u></span>
+                </div>
+              </div>)}
+          </div>
+        </div>}
+    </div>
+  );
+}
+
+function Tpl({ tag, tone, title, text, btn, kind }) {
+  return (
+    <div className="card p-5 flex flex-col justify-between gap-4 hover:shadow-md transition">
+      <div className="space-y-2"><Badge tone={tone}>{tag}</Badge><h3 className="font-bold text-slate-900">{title}</h3><p className="text-xs text-slate-500">{text}</p></div>
+      <Btn kind={kind} className="w-full">{btn}</Btn>
+    </div>
+  );
+}
+
+function TemplatesTab({ role, onLogin }) {
+  const emp = can(role, 'template.read.employee');
+  return (
+    <div className="space-y-6">
+      <Head title="Құжат үлгілерінің кітапханасы" sub="Нормативтік және ұйымдастырушылық құжаттар каталогы" />
+      {!can(role, 'template.read.public') ?
+        <div className="card p-12 text-center space-y-3">
+          <div className="text-4xl">🔒</div>
+          <h3 className="text-lg font-bold">Үлгілер кітапханасы жабық</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">Үлгілерді көру және олар бойынша құжат жасау үшін жүйеге тіркеліңіз немесе кіріңіз.</p>
+          <Btn onClick={onLogin}>Жүйеге кіру</Btn>
+        </div> :
+        <div className="grid md:grid-cols-3 gap-6">
+          <Tpl tag="Жалпы · Public" tone="green" title="Қызметтік жазба үлгісі" text="Барлық тіркелген пайдаланушылар үшін негізгі ішкі хат алмасу форматы." btn="Үлгіні ашу & қолдану" kind="ghost" />
+          <Tpl tag="Жалпы · Public" tone="green" title="Еңбек шартына қосымша келісім" text="Кадрлық өзгерістерді тіркеуге арналған стандартты келісім үлгісі." btn="Үлгіні ашу & қолдану" kind="ghost" />
+          {emp ?
+            <Tpl tag="Корпоративтік · Employee" tone="blue" title="Бөлімше ережесі & функциялар матрицасы" text="Қайта құрылымдау кезіндегі ішкі департамент регламенті." btn="Құжат жасау" kind="primary" /> :
+            <div className="opacity-60"><Tpl tag="Құлыпталған 🔒" tone="red" title="Бөлімше ережесі (Корпоративтік)" text="Тек компанияның расталған қызметкерлеріне қолжетімді." btn="Қолжетімсіз" kind="ghost" /></div>}
+        </div>}
+    </div>
+  );
+}
