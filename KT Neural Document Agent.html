@@ -18,3 +18,42 @@ body{background:#f3f7fd;background-image:radial-gradient(#cddbf0 1px,transparent
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 </head>
+<body class="font-sans antialiased">
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+const PERMS = {
+  guest: ['doc.upload','analysis.run'],
+  user: ['doc.upload','analysis.run','analysis.export','analysis.save','doc.edit','template.read.public','history.read.own'],
+  employee: ['doc.upload','analysis.run','analysis.export','analysis.save','doc.edit','template.read.public','template.read.employee','history.read.own'],
+  admin: ['doc.upload','analysis.run','analysis.export','analysis.save','doc.edit','template.read.public','template.read.employee','history.read.own','user.manage']
+};
+const can = (role, p) => PERMS[role]?.includes(p) ?? false;
+
+const ROLE_LABEL = { user: 'Пайдаланушы', employee: 'Қызметкер', admin: 'Әкімші' };
+let ACCOUNTS = [
+  { email: 'admin@kt.kz', pass: 'Admin123', name: 'Әкімші', role: 'admin' },
+  { email: 'employee@kt.kz', pass: 'Employee123', name: 'Қызметкер', role: 'employee' },
+  { email: 'user@kt.kz', pass: 'User12345', name: 'Пайдаланушы', role: 'user' }
+];
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const Auth = {
+  async login(email, pass) {
+    await wait(600);
+    const a = ACCOUNTS.find(x => x.email === email.trim().toLowerCase() && x.pass === pass);
+    if (!a) throw new Error('401: Email немесе құпиясөз қате');
+    return { email: a.email, name: a.name, role: a.role };
+  },
+  async register(name, email, pass) {
+    await wait(600);
+    const e = email.trim().toLowerCase();
+    if (!name.trim()) throw new Error('Атыңызды енгізіңіз');
+    if (!/^\S+@\S+\.\S+$/.test(e)) throw new Error('Email форматы дұрыс емес');
+    if (pass.length < 8) throw new Error('Құпиясөз кемінде 8 таңба болуы керек');
+    if (ACCOUNTS.some(x => x.email === e)) throw new Error('409: Бұл email тіркелген');
+    const a = { email: e, pass, name: name.trim(), role: 'user' };
+    ACCOUNTS = [...ACCOUNTS, a];
+    return { email: a.email, name: a.name, role: a.role };
+  }
+};
