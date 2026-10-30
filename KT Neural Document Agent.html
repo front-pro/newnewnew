@@ -264,4 +264,24 @@ function HistoryTab({ role }) {
     </div>
   );
 }
-
+function AuthScreen({ onAuth }) {
+  const [mode, setMode] = useState('login');
+  const [f, setF] = useState({ name: '', email: '', pass: '' });
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = k => e => setF({ ...f, [k]: e.target.value });
+  const submit = async e => {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try { onAuth(mode === 'login' ? await Auth.login(f.email, f.pass) : await Auth.register(f.name, f.email, f.pass)); }
+    catch (x) { setErr(x.message); setBusy(false); }
+  };
+  const inp = 'w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-xl px-3.5 py-2.5 text-sm outline-none transition bg-white';
+  const demo = [['admin@kt.kz', 'Admin123', 'admin'], ['employee@kt.kz', 'Employee123', 'employee'], ['user@kt.kz', 'User12345', 'user']];
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-5">
+        <div className="text-center space-y-2">
+          <div className="inline-block bg-gradient-to-br from-blue-600 to-cyan-500 text-white font-mono font-bold px-4 py-2.5 rounded-xl text-xl">KT</div>
+          <h1 className="text-2xl font-bold text-slate-900">Neural Document Agent</h1>
+          <p className="text-sm text-slate-500">Толық мүмкіндіктер үшін авторизация қажет, қонақ режимінде шектеулі жұмыс істеуге болады</p>
+        </div>
