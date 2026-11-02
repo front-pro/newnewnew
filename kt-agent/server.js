@@ -223,3 +223,7 @@ app.patch('/api/users/:email/role', need('user.manage'), (req, res) => {
   save();
   res.json(pub(u));
 });
+app.listen(PORT, err => {
+  if (err) { console.error('Сервер іске қосылмады: ' + err.message + '\n(3000 порты бос емес болса: Get-Process node | Stop-Process -Force)'); process.exit(1); }
+  console.log(`http://localhost:${PORT}`);
+});
