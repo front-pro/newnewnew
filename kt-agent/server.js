@@ -55,10 +55,15 @@ try {
   users = d.users; log.push(...d.log); nextId = d.nextId;
   d.analyses.forEach(([k, v]) => analyses.set(k, v));
   d.versions.forEach(([k, v]) => versions.set(k, v));
-  (d.docs || []).forEach(([k, v]) => docs.set(k, v));
+  (d.docs || []).forEach(([k, v]) => docs.set(k, typeof v === 'string' ? [{ id: 1, title: 'Құжат', text: v, version: versions.get(k) || 1, updated: now() }] : v));
   if (d.templates) templates = d.templates;
+  (d.sessions || []).forEach(([k, v]) => sessions.set(k, v));
 } catch {}
-const save = () => fs.writeFileSync(DB, JSON.stringify({ users, log, nextId, analyses: [...analyses], versions: [...versions], docs: [...docs], templates }));
+const save = () => { // атомдық жазу: алдымен уақытша файл, содан кейін rename
+  const tmp = DB + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ users, log, nextId, analyses: [...analyses], versions: [...versions], docs: [...docs], templates, sessions: [...sessions] }));
+  fs.renameSync(tmp, DB);
+};
 
 // ---------- Middleware ----------
 app.use((req, res, next) => {
@@ -85,19 +90,29 @@ app.post('/api/auth/register', (req, res) => {
   save();
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, u.email);
+  save();
   res.status(201).json({ token, user: pub(u) });
 });
 
+const fails = new Map(); // email -> { n, t }: сәтсіз кіру әрекеттерін шектеу
 app.post('/api/auth/login', (req, res) => {
   const { email = '', password = '' } = req.body;
+  const key = email.trim().toLowerCase(), f = fails.get(key) || { n: 0, t: 0 };
+  if (f.n >= 5 && Date.now() - f.t < 60000) return res.status(429).json({ error: '429: Тым көп сәтсіз әрекет. 1 минуттан кейін қайталаңыз' });
   const u = users.find(x => x.email === email.trim().toLowerCase());
   const ok = u && crypto.timingSafeEqual(Buffer.from(hash(password, u.salt)), Buffer.from(u.hash));
-  if (!ok) return res.status(401).json({ error: '401: Email немесе құпиясөз қате' });
+  if (!ok) { fails.set(key, { n: (Date.now() - f.t < 60000 ? f.n : 0) + 1, t: Date.now() }); return res.status(401).json({ error: '401: Email немесе құпиясөз қате' }); }
+  fails.delete(key);
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, u.email);
+  save();
   res.json({ token, user: pub(u) });
 });
 
+app.post('/api/auth/logout', (req, res) => {
+  sessions.delete((req.headers.authorization || '').replace('Bearer ', ''));
+  save(); res.json({ ok: true });
+});
 app.get('/api/auth/me', (req, res) => res.json(pub(req.user)));
 
 // ---------- Analysis ----------
@@ -125,52 +140,38 @@ app.get('/api/analysis/:id/export', need('analysis.export'), (req, res) => {
 });
 
 // ---------- Documents & history ----------
+// ---------- Documents (әр пайдаланушының бірнеше құжаты) ----------
+const myDocs = email => docs.get(email) || [];
+app.get('/api/documents', need('doc.edit'), (req, res) =>
+  res.json(myDocs(req.user.email).map(({ id, title, version, updated }) => ({ id, title, version, updated })).reverse()));
+app.get('/api/documents/me', need('doc.edit'), (req, res) => { // ескі нұсқамен үйлесімділік: соңғы құжат
+  const l = myDocs(req.user.email).slice(-1)[0];
+  res.json(l ? { id: l.id, text: l.text, version: l.version } : { text: '', version: 0 });
+});
+app.get('/api/documents/:id', need('doc.edit'), (req, res) => {
+  const d = myDocs(req.user.email).find(x => x.id === Number(req.params.id));
+  if (!d) return res.status(404).json({ error: '404: Құжат табылмады' });
+  res.json(d);
+});
 app.post('/api/documents', need('doc.edit'), (req, res) => {
-  const text = String(req.body.text || '');
-  if (!text.trim()) return res.status(400).json({ error: 'Құжат мәтіні бос' });
+  const { id, title = '', text = '' } = req.body;
+  if (!title.trim() || title.length > 120) return res.status(400).json({ error: 'Құжат атауын енгізіңіз (макс. 120 таңба)' });
+  if (!String(text).trim()) return res.status(400).json({ error: 'Құжат мәтіні бос' });
   if (text.length > 200000) return res.status(413).json({ error: 'Құжат тым үлкен' });
-  const v = (versions.get(req.user.email) || 0) + 1;
-  versions.set(req.user.email, v);
-  docs.set(req.user.email, text);
-  log.push({ owner: req.user.email, type: 'Редактор', tone: 'green', title: 'Департамент ережесі', meta: `${now()} · v${v}.0` });
+  const list = [...myDocs(req.user.email)];
+  let d = id ? list.find(x => x.id === Number(id)) : null;
+  if (id && !d) return res.status(404).json({ error: '404: Құжат табылмады' });
+  if (d) { d.title = title.trim(); d.text = text; d.version += 1; d.updated = now(); }
+  else { d = { id: Math.max(0, ...list.map(x => x.id)) + 1, title: title.trim(), text, version: 1, updated: now() }; list.push(d); }
+  docs.set(req.user.email, list);
+  log.push({ owner: req.user.email, type: 'Редактор', tone: 'green', title: d.title, meta: `${now()} · v${d.version}.0` });
   save();
-  res.json({ version: v });
+  res.json({ id: d.id, version: d.version });
 });
-
-app.get('/api/documents/me', need('doc.edit'), (req, res) =>
-  res.json({ text: docs.get(req.user.email) || '', version: versions.get(req.user.email) || 0 }));
-
-// ---------- Templates ----------
-const canSee = (u, t) => t.access === 'public' || PERMS[u.role].includes('template.read.employee');
-const findTpl = (req, res) => {
-  const t = templates.find(x => x.id === Number(req.params.id));
-  if (!t) { res.status(404).json({ error: '404: Үлгі табылмады' }); return null; }
-  if (!canSee(req.user, t)) { res.status(403).json({ error: '403 Forbidden: бұл үлгі тек қызметкерлерге қолжетімді' }); return null; }
-  return t;
-};
-app.get('/api/templates', need('template.read.public'), (req, res) =>
-  res.json(templates.map(t => canSee(req.user, t) ? t : { id: t.id, title: t.title, desc: t.desc, access: t.access, owner: t.owner, locked: true })));
-app.get('/api/templates/:id', need('template.read.public'), (req, res) => { const t = findTpl(req, res); if (t) res.json(t); });
-app.post('/api/templates/:id/use', need('template.read.public'), (req, res) => {
-  const t = findTpl(req, res); if (!t) return;
-  log.push({ owner: req.user.email, type: 'Үлгі', tone: 'violet', title: t.title, meta: `${now()} · редакторда ашылды` });
-  save(); res.json(t);
-});
-app.post('/api/templates', need('template.write'), (req, res) => {
-  const { title = '', desc = '', body = '', access = 'public' } = req.body;
-  if (title.trim().length < 3) return res.status(400).json({ error: 'Атауы кемінде 3 таңба болуы керек' });
-  if (!body.trim()) return res.status(400).json({ error: 'Үлгі мәтіні бос' });
-  if (!['public', 'employee'].includes(access)) return res.status(400).json({ error: 'Қолжетімділік түрі қате' });
-  const t = { id: Math.max(0, ...templates.map(x => x.id)) + 1, title: title.trim(), desc: desc.trim(), access, owner: req.user.email, body };
-  templates.push(t);
-  log.push({ owner: req.user.email, type: 'Үлгі', tone: 'violet', title: t.title, meta: `${now()} · жаңа үлгі қосылды` });
-  save(); res.status(201).json(t);
-});
-app.delete('/api/templates/:id', need('template.write'), (req, res) => {
-  const t = templates.find(x => x.id === Number(req.params.id));
-  if (!t) return res.status(404).json({ error: '404: Үлгі табылмады' });
-  if (req.user.role !== 'admin' && t.owner !== req.user.email) return res.status(403).json({ error: '403 Forbidden: тек өз үлгіңізді жоя аласыз' });
-  templates = templates.filter(x => x !== t);
+app.delete('/api/documents/:id', need('doc.edit'), (req, res) => {
+  const list = myDocs(req.user.email);
+  if (!list.some(x => x.id === Number(req.params.id))) return res.status(404).json({ error: '404: Құжат табылмады' });
+  docs.set(req.user.email, list.filter(x => x.id !== Number(req.params.id)));
   save(); res.json({ ok: true });
 });
 
