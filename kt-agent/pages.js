@@ -64,3 +64,271 @@ const shell = (me, tab, body, fl = '') => page('KT Neural Document Agent', `
 </header>
 <main class="max-w-6xl mx-auto p-4 md:p-6 space-y-6">${fl}${body}</main>
 <footer class="border-t border-slate-200 bg-white/70 py-4 text-center font-mono text-xs text-slate-400">KT Neural Document Agent v2.0</footer>`);
+// ---------- Routes ----------
+module.exports = app => {
+  app.use(express.urlencoded({ extended: false, limit: '2mb' }));
+  const setCookies = (res, sid, guest) => res.setHeader('Set-Cookie', [
+    `sid=${sid}; Path=/; HttpOnly; SameSite=Lax${sid ? '' : '; Max-Age=0'}`,
+    `guest=${guest ? 1 : ''}; Path=/; SameSite=Lax${guest ? '' : '; Max-Age=0'}`]);
+  const fl = req => flash(req.query.msg, req.query.t);
+
+  // --- Кіру / тіркелу / қонақ ---
+  app.get('/login', (req, res) => {
+    const inp = 'w-full border border-slate-300 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-sm outline-none bg-white';
+    const demo = [['admin@kt.kz', 'Admin123', 'red'], ['employee@kt.kz', 'Employee123', 'blue'], ['user@kt.kz', 'User12345', 'green']];
+    res.send(page('Кіру · KT Neural Agent', `<div class="min-h-screen flex items-center justify-center p-4"><div class="w-full max-w-md space-y-5">
+      <div class="text-center space-y-2"><span class="inline-block bg-gradient-to-br from-blue-600 to-cyan-500 text-white font-mono font-bold px-4 py-2.5 rounded-xl text-xl">KT</span>
+        <h1 class="text-2xl font-bold">Neural Document Agent</h1><p class="text-sm text-slate-500">Толық мүмкіндіктер үшін авторизация қажет</p></div>
+      ${flash(req.query.err, 'red')}
+      <form method="POST" action="/login" class="card p-6 space-y-3"><h2 class="font-semibold">Кіру</h2>
+        <input class="${inp}" type="email" name="email" placeholder="Email" aria-label="Email" required>
+        <input class="${inp}" type="password" name="password" placeholder="Құпиясөз" aria-label="Құпиясөз" required>${btn('Жүйеге кіру', 'primary', 'class="w-full"')}</form>
+      <form method="POST" action="/register" class="card p-6 space-y-3"><h2 class="font-semibold">Тіркелу</h2>
+        <input class="${inp}" name="name" placeholder="Аты-жөні" aria-label="Аты-жөні" required>
+        <input class="${inp}" type="email" name="email" placeholder="Email" aria-label="Email" required>
+        <input class="${inp}" type="password" name="password" placeholder="Құпиясөз (кемінде 8 таңба)" required>${btn('Тіркелу', 'ghost', 'class="w-full"')}</form>
+      <form method="POST" action="/guest"><button class="w-full border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-white rounded-xl py-2.5 text-sm font-medium transition">
+        👤 Қонақ ретінде жалғастыру<span class="block text-xs font-normal text-slate-400">Талдау бар, сақтау мен экспорт жоқ</span></button></form>
+      <div class="card p-4 space-y-1.5"><p class="text-xs font-semibold text-slate-500">Демо аккаунттар:</p>
+        ${demo.map(([e, p, t]) => `<div class="flex justify-between items-center font-mono text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2"><span>${e} / ${p}</span>${badge(e.split('@')[0], t)}</div>`).join('')}</div>
+    </div></div>`));
+  });
+  const authPost = kind => async (req, res) => {
+    try {
+      const b = req.body;
+      const d = await call(null, 'POST', '/api/auth/' + kind, kind === 'login' ? { email: b.email, password: b.password } : b);
+      setCookies(res, d.token, false); res.redirect('/compare');
+    } catch (e) { res.redirect('/login?err=' + encodeURIComponent(e.message)); }
+  };
+  app.post('/login', authPost('login'));
+  app.post('/register', authPost('register'));
+  app.post('/guest', (req, res) => { setCookies(res, '', true); res.redirect('/compare'); });
+  app.post('/logout', async (req, res) => { const c = cookies(req); if (c.sid) await call(c.sid, 'POST', '/api/auth/logout').catch(() => {}); setCookies(res, '', false); res.redirect('/login'); });
+
+  // --- Қорғау: кірмеген адам /login-ге ---
+  const guard = async (req, res, next) => {
+    const c = cookies(req); req.token = c.sid || null;
+    if (!c.sid && !c.guest) return res.redirect('/login');
+    try { req.me = c.sid ? await call(c.sid, 'GET', '/api/auth/me') : { name: 'Қонақ', role: 'guest' }; } catch { req.me = { role: 'guest' }; }
+    if (c.sid && !req.me.email) { setCookies(res, '', false); return res.redirect('/login'); }
+    next();
+  };
+  const h = (tab, fn) => async (req, res) => {
+    try { await fn(req, res); } catch (e) { res.send(shell(req.me, tab, '', flash(e.message, 'red'))); }
+  };
+  app.get('/', (req, res) => res.redirect('/compare'));
+
+  // --- Талдау ---
+  const SAMPLE_A = `1.1. Департамент ұйымның құрылымдық бөлімшесі болып табылады.\n2.1. Құжаттарды қағаз және электронды түрде архивтеуді қамтамасыз ету.\n3.1. Ақпараттық жүйелердің қауіпсіздігін тексеру жүргізіледі.\n3.2. Ақпараттық жүйелерді әзірлеу ұйымдастырылады.`;
+  const SAMPLE_B = `1.1. Департамент ұйымның құрылымдық бөлімшесі болып табылады.\n2.1. Құжаттарды электронды түрде архивтеуді және автоматты талдауды қамтамасыз ету.\n3.1. Ақпараттық жүйелердің қауіпсіздігін тексеру және әзірлеу жүргізіледі.\n3.2. Ақпараттық жүйелердің қауіпсіздігін тексеру жүргізіледі.`;
+  const LOADER = `<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <script>
+  async function loadDoc(inp) {
+    const f = inp.files[0]; if (!f) return;
+    const card = inp.closest('.card'), ta = card.querySelector('textarea'), nm = card.querySelector('.fname');
+    try {
+      let t;
+      if (/\\.docx$/i.test(f.name)) { t = (await mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() })).value; }
+      else { t = await f.text(); }
+      ta.value = t.trim(); nm.textContent = '✅ ' + f.name + ' (' + Math.max(1, Math.round(f.size / 1024)) + ' KB)';
+    } catch (e) { nm.textContent = '⚠ Файлды оқу мүмкін болмады: ' + e.message; }
+  }
+  </script>
+  <script>
+  async function pickDoc(sel) {
+    if (!sel.value) return;
+    const card = sel.closest('.card');
+    card.querySelector('textarea').value = await (await fetch('/documents/' + sel.value + '/text')).text();
+    card.querySelector('.fname').textContent = '✅ Менің құжатым: ' + sel.options[sel.selectedIndex].text;
+  }
+  document.getElementById('cmp').addEventListener('submit', function () {
+    const b = document.querySelector('button[form=cmp]'); if (b) { b.disabled = true; b.textContent = '⏳ Талдануда...'; }
+  });
+  </script>`;
+  const dz = (t, n, v, dl = []) => `<div class="card p-5 space-y-3"><h3 class="font-semibold text-sm">${t}</h3>
+    <div class="relative border-2 border-dashed border-blue-200 hover:border-blue-400 hover:bg-blue-50/40 rounded-xl p-5 text-center bg-slate-50/60 transition">
+      <div class="text-2xl">📄</div><p class="text-sm font-medium">Файлды осында сүйреңіз немесе басып таңдаңыз</p>
+      <p class="fname font-mono text-xs text-slate-500 mt-1">.txt, .md, .csv, .docx</p>
+      <input type="file" accept=".txt,.md,.csv,.docx" onchange="loadDoc(this)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></div>
+    ${dl.length ? `<select onchange="pickDoc(this)" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white"><option value="">📂 Менің құжаттарымнан таңдау…</option>${dl.map(d => `<option value="${d.id}">${esc(d.title)} (v${d.version}.0)</option>`).join('')}</select>` : ''}
+    <textarea name="${n}" required spellcheck="false" placeholder="...немесе мәтінді осында қойыңыз" class="w-full h-48 border border-slate-200 rounded-xl p-3 font-mono text-xs outline-none focus:border-blue-500 resize-y">${esc(v)}</textarea></div>`;
+  const compareHtml = (me, r, a = SAMPLE_A, b = SAMPLE_B, dl = []) => {
+    const tn = { CONFLICT: 'red', LOST_FUNCTION: 'amber', NEW_CLAUSE: 'blue', CHANGED: 'violet' };
+    const M = r && [['Барлық өзгерістер', r.metrics.total, ''], ['Қақтығыстар', r.metrics.conflicts, 'text-rose-600'], ['Жоғалған функциялар', r.metrics.lost, 'text-amber-600'], ['Жаңа / өзгерген', r.metrics.news + r.metrics.changed, 'text-blue-600']];
+    return head('Құжаттарды семантикалық салыстыру', '«Дейін» және «Кейін» редакцияларын ЖИ арқылы талдау',
+        btn('⚡ Талдауды іске қосу', 'primary', 'form="cmp"')) +
+      (me.role === 'guest' ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm"><b>Қонақ режимі:</b> талдау жұмыс істейді, бірақ нәтиже сақталмайды, экспорт пен редактор жабық. <a class="underline" href="/login">Кіру / Тіркелу</a></div>` : '') +
+      `<form id="cmp" method="POST" action="/compare" class="grid md:grid-cols-2 gap-6">${dz('Құжат A (Редакция «Дейін»)', 'a', a, dl)}${dz('Құжат B (Редакция «Кейін»)', 'b', b, dl)}</form>${LOADER}` +
+      (r ? `<div class="card p-6 space-y-6"><div class="flex flex-col md:flex-row justify-between gap-4 pb-4 border-b border-slate-100">
+        <div><div class="flex items-center gap-2"><h2 class="text-xl font-bold">Талдау қорытындысы</h2>${r.isSaved ? badge('Сақталды', 'green') : badge('Уақытша режим', 'slate')}</div>
+        <p class="text-sm text-slate-600 mt-1">${esc(r.summary)}</p></div>
+        <form method="POST" action="/export/${r.id}">${btn('📥 Экспорттау', 'ghost')}</form></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">${M.map(([l, v, c]) => `<div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><span class="text-xs text-slate-500">${l}</span><p class="font-mono text-3xl font-bold mt-1 ${c}">${v}</p></div>`).join('')}</div>
+        <div class="space-y-3"><h3 class="font-semibold">Source Trace &amp; Agent Insight</h3>${r.changes.map(c => `<div class="border border-slate-200 rounded-xl p-4 space-y-3">
+          <div class="flex items-center gap-2 flex-wrap">${badge(c.type, tn[c.type])}<h4 class="font-semibold">${esc(c.title)}</h4></div>
+          <p class="text-sm text-slate-600">${esc(c.description)}</p>
+          ${c.diff ? `<p class="text-sm leading-relaxed bg-slate-50 border border-slate-200 rounded-lg p-3">${c.diff.map(t => t.k === 's' ? esc(t.w) : t.k === 'd' ? `<del class="bg-rose-100 text-rose-700 px-0.5 rounded">${esc(t.w)}</del>` : `<ins class="bg-emerald-100 text-emerald-700 no-underline px-0.5 rounded">${esc(t.w)}</ins>`).join(' ')}</p>` : ''}
+          <div class="font-mono text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-500">📍 A: ${esc(c.a)} ➔ 📍 B: ${esc(c.b)}</div></div>`).join('')}</div></div>` : '');
+  };
+  const docList = req => req.me.role === 'guest' ? Promise.resolve([]) : call(req.token, 'GET', '/api/documents').catch(() => []);
+  app.get('/compare', guard, h('compare', async (req, res) => res.send(shell(req.me, 'compare', compareHtml(req.me, null, undefined, undefined, await docList(req)), fl(req)))));
+  app.post('/compare', guard, h('compare', async (req, res) => {
+    const r = await call(req.token, 'POST', '/api/analysis/run', { a: req.body.a, b: req.body.b });
+    res.send(shell(req.me, 'compare', compareHtml(req.me, r, req.body.a, req.body.b, await docList(req))));
+  }));
+  app.post('/export/:id', guard, async (req, res) => {
+    try {
+      const d = await call(req.token, 'GET', `/api/analysis/${Number(req.params.id)}/export`);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="analysis-${Number(req.params.id)}.csv"`);
+      res.send('\ufeff' + d.csv);
+    }
+    catch (e) { res.redirect('/compare?t=amber&msg=' + encodeURIComponent(e.message)); }
+  });
+
+  // --- Үлгілер ---
+  const enc = encodeURIComponent;
+  const tplBadge = t => badge(t.access === 'public' ? 'Жалпы · Public' : 'Корпоративтік · Employee', t.access === 'public' ? 'green' : 'blue');
+  const canDelTpl = (me, t) => ['employee', 'admin'].includes(me.role) && (me.role === 'admin' || t.owner === me.email);
+  app.get('/templates', guard, h('templates', async (req, res) => {
+    const intro = head('Құжат үлгілерінің кітапханасы', 'Үлгіні ашыңыз, редакторда өзгертіңіз немесе өз үлгіңізді қосыңыз');
+    if (req.me.role === 'guest') return res.send(shell(req.me, 'templates', intro + locked('Үлгілер кітапханасы жабық', 'Үлгілерді көру үшін тіркеліңіз немесе кіріңіз.')));
+    const list = await call(req.token, 'GET', '/api/templates');
+    const canWrite = ['employee', 'admin'].includes(req.me.role);
+    const card = t => t.locked
+      ? `<div class="card p-5 space-y-2 opacity-60">${badge('Құлыпталған 🔒', 'red')}<h3 class="font-bold">${esc(t.title)}</h3><p class="text-xs text-slate-500">Тек қызметкерлерге қолжетімді.</p></div>`
+      : `<div class="card p-5 space-y-3 flex flex-col">${tplBadge(t)}
+        <h3 class="font-bold">${esc(t.title)}</h3><p class="text-xs text-slate-500">${esc(t.desc)}</p>
+        <details class="text-xs"><summary class="cursor-pointer text-blue-600">Қарап шығу</summary>
+          <pre class="mt-2 whitespace-pre-wrap font-mono bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-48 overflow-auto">${esc(t.body)}</pre></details>
+        <div class="flex gap-2 flex-wrap mt-auto">
+          <a href="/templates/${t.id}" class="${BTN.primary} text-sm px-4 py-2 rounded-xl">Үлгіні ашу</a>
+          <form method="POST" action="/templates/${t.id}/use">${btn('✏️ Үлгіні өзгерту', 'ghost')}</form>
+          <a href="/templates/${t.id}/download" class="${BTN.ghost} text-sm px-4 py-2 rounded-xl">⬇ .txt</a>
+          ${canDelTpl(req.me, t) ? `<form method="POST" action="/templates/${t.id}/delete" onsubmit="return confirm('Үлгіні жою керек пе?')">${btn('Жою', 'ghost')}</form>` : ''}
+        </div></div>`;
+    const inp = 'w-full border border-slate-300 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-sm outline-none bg-white';
+    const create = canWrite ? `<form method="POST" action="/templates" class="card p-5 space-y-3"><h2 class="font-semibold">➕ Жаңа үлгі қосу</h2>
+      <div class="grid md:grid-cols-3 gap-3"><input class="${inp}" name="title" placeholder="Атауы" required>
+        <input class="${inp}" name="desc" placeholder="Қысқаша сипаттама">
+        <select name="access" class="${inp}"><option value="public">Жалпы (барлығына)</option><option value="employee">Тек қызметкерлерге</option></select></div>
+      <textarea name="body" required placeholder="Үлгі мәтіні..." class="${inp} h-32 font-mono"></textarea>${btn('Үлгіні сақтау', 'green')}</form>` : '';
+    res.send(shell(req.me, 'templates', intro + `<div class="grid md:grid-cols-3 gap-6">${list.map(card).join('')}</div>` + create, fl(req)));
+  }));
+  app.get('/templates/:id/open', (req, res) => res.redirect('/templates/' + Number(req.params.id)));
+  app.get('/templates/:id', guard, h('templates', async (req, res) => {
+    if (req.me.role === 'guest') return res.send(shell(req.me, 'templates', locked('Үлгілер кітапханасы жабық', 'Үлгіні ашу үшін жүйеге кіріңіз.')));
+    const t = await call(req.token, 'GET', `/api/templates/${Number(req.params.id)}`);
+    res.send(shell(req.me, 'templates', head(esc(t.title), esc(t.desc), tplBadge(t)) +
+      `<div class="card p-6 space-y-4"><pre class="whitespace-pre-wrap font-mono text-sm leading-relaxed">${esc(t.body)}</pre>
+        <div class="flex gap-2 flex-wrap pt-4 border-t border-slate-100">
+          <form method="POST" action="/templates/${t.id}/use">${btn('✏️ Үлгіні өзгерту (редакторға)')}</form>
+          <a href="/templates/${t.id}/download" class="${BTN.ghost} text-sm px-4 py-2 rounded-xl">⬇ Жүктеу (.txt)</a>
+          <a href="/templates" class="${BTN.ghost} text-sm px-4 py-2 rounded-xl">← Үлгілерге оралу</a>
+        </div></div>`));
+  }));
+  app.post('/templates', guard, async (req, res) => {
+    try { await call(req.token, 'POST', '/api/templates', req.body); res.redirect('/templates?t=green&msg=' + enc('Үлгі қосылды')); }
+    catch (e) { res.redirect('/templates?t=red&msg=' + enc(e.message)); }
+  });
+  app.post('/templates/:id/use', guard, async (req, res) => {
+    try { await call(req.token, 'POST', `/api/templates/${Number(req.params.id)}/use`); res.redirect('/editor?tpl=' + Number(req.params.id)); }
+    catch (e) { res.redirect('/templates?t=red&msg=' + enc(e.message)); }
+  });
+  app.post('/templates/:id/delete', guard, async (req, res) => {
+    try { await call(req.token, 'DELETE', `/api/templates/${Number(req.params.id)}`); res.redirect('/templates?t=green&msg=' + enc('Үлгі жойылды')); }
+    catch (e) { res.redirect('/templates?t=red&msg=' + enc(e.message)); }
+  });
+  app.get('/templates/:id/download', guard, async (req, res) => {
+    try {
+      const t = await call(req.token, 'GET', `/api/templates/${Number(req.params.id)}`);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="template-${t.id}.txt"`);
+      res.send('\ufeff' + t.body);
+    } catch (e) { res.redirect('/templates?t=red&msg=' + enc(e.message)); }
+  });
+
+  // --- Редактор ---
+  const DOC = `1. ЖАЛПЫ ЕРЕЖЕЛЕР\n1.1. Осы Департамент туралы ереже ұйымның құрылымдық бөлімшесінің мәртебесін белгілейді.\n\n2. НЕГІЗГІ МІНДЕТТЕРІ\n2.1. Құжаттарды автоматты семантикалық талдауды қамтамасыз ету.`;
+  app.get('/editor', guard, h('editor', async (req, res) => {
+    const intro = head('Құжат редакторы', 'Құжатты өзгертіп сақтаңыз, әр сақтауда жаңа нұсқа жасалады');
+    if (req.me.role === 'guest') return res.send(shell(req.me, 'editor', intro + locked('Редактор жабық', 'Құжаттарды өңдеу және сақтау үшін жүйеге кіріңіз.')));
+    const list = await call(req.token, 'GET', '/api/documents');
+    let cur = { id: '', title: 'Жаңа құжат', text: DOC, version: 0 }, note = '';
+    if (req.query.doc) cur = await call(req.token, 'GET', '/api/documents/' + Number(req.query.doc));
+    else if (req.query.tpl) {
+      const t = await call(req.token, 'GET', '/api/templates/' + Number(req.query.tpl));
+      cur = { id: '', title: t.title, text: t.body, version: 0 };
+      note = `«${t.title}» үлгісі ашылды. Мәтінді өзгертіп, «Сақтау» батырмасын басыңыз.`;
+    }
+    const inp = 'w-full border border-slate-300 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-sm outline-none bg-white';
+    const saved = list.length ? `<div class="card overflow-hidden"><h2 class="font-semibold px-4 pt-4">Менің құжаттарым</h2><div class="divide-y divide-slate-100 mt-2">${list.map(d => `
+      <div class="p-4 flex flex-col md:flex-row justify-between md:items-center gap-2"><div><b class="text-sm">${esc(d.title)}</b>
+        <p class="font-mono text-xs text-slate-400">v${d.version}.0 · ${esc(d.updated)}</p></div>
+        <div class="flex gap-2"><a href="/editor?doc=${d.id}" class="${BTN.ghost} text-xs px-3 py-1.5 rounded-xl">Ашу</a>
+          <a href="/documents/${d.id}/download" class="${BTN.ghost} text-xs px-3 py-1.5 rounded-xl">⬇ .txt</a>
+          <form method="POST" action="/documents/${d.id}/delete" onsubmit="return confirm('Құжатты жою керек пе?')">${btn('Жою', 'ghost', 'class="!py-1.5 !px-3 !text-xs"')}</form></div></div>`).join('')}</div></div>` : '';
+    res.send(shell(req.me, 'editor', intro +
+      `<form method="POST" action="/editor" class="space-y-3"><input type="hidden" name="id" value="${esc(cur.id)}">
+        <input class="${inp}" name="title" value="${esc(cur.title)}" placeholder="Құжат атауы" required>
+        <div class="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+          <div class="px-4 py-2 bg-slate-50 border-b border-slate-200 font-mono text-xs text-slate-500 flex justify-between"><span>${esc(cur.title)}.txt</span><span>${cur.version ? 'соңғы нұсқа: v' + cur.version + '.0' : 'жаңа құжат'}</span></div>
+          <textarea id="ed" name="text" spellcheck="false" class="w-full h-96 p-5 font-mono text-sm leading-relaxed outline-none resize-none">${esc(cur.text)}</textarea></div>
+        <div class="flex gap-2 flex-wrap">${btn('💾 Сақтау (жаңа нұсқа)', 'green')}
+          <button type="button" onclick="dl()" class="${BTN.ghost} text-sm px-4 py-2 rounded-xl">⬇ Жүктеу (.txt)</button>
+          <a href="/editor" class="${BTN.ghost} text-sm px-4 py-2 rounded-xl">➕ Жаңа құжат</a></div></form>
+        <script>function dl(){var t=document.getElementById('ed').value,n=(document.querySelector('[name=title]').value||'document')+'.txt',a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\\ufeff'+t],{type:'text/plain;charset=utf-8'}));a.download=n;a.click();}</script>` + saved,
+      fl(req) + flash(note, 'violet')));
+  }));
+  app.post('/editor', guard, async (req, res) => {
+    try {
+      const d = await call(req.token, 'POST', '/api/documents', { id: req.body.id || undefined, title: req.body.title, text: req.body.text });
+      res.redirect(`/editor?doc=${d.id}&t=green&msg=` + enc(`Сақталды! Нұсқа: v${d.version}.0`));
+    } catch (e) { res.redirect('/editor?t=red&msg=' + enc(e.message)); }
+  });
+  app.post('/documents/:id/delete', guard, async (req, res) => {
+    try { await call(req.token, 'DELETE', `/api/documents/${Number(req.params.id)}`); res.redirect('/editor?t=green&msg=' + enc('Құжат жойылды')); }
+    catch (e) { res.redirect('/editor?t=red&msg=' + enc(e.message)); }
+  });
+  app.get('/documents/:id/text', guard, async (req, res) => {
+    try { const d = await call(req.token, 'GET', `/api/documents/${Number(req.params.id)}`); res.type('text/plain; charset=utf-8').send(d.text); }
+    catch (e) { res.status(404).send(e.message); }
+  });
+  app.get('/documents/:id/download', guard, async (req, res) => {
+    try {
+      const d = await call(req.token, 'GET', `/api/documents/${Number(req.params.id)}`);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="document-${d.id}.txt"; filename*=UTF-8''${enc(d.title)}.txt`);
+      res.send('\ufeff' + d.text);
+    } catch (e) { res.redirect('/editor?t=red&msg=' + enc(e.message)); }
+  });
+
+  // --- Тарих ---
+  app.get('/history', guard, h('history', async (req, res) => {
+    let body;
+    if (req.me.role === 'guest') body = locked('Тарих қолжетімсіз', 'Қонақтардың тарихы сақталмайды. Жүйеге кіріңіз.');
+    else {
+      const rows = await call(req.token, 'GET', '/api/history');
+      body = rows.length ? `<div class="card overflow-hidden divide-y divide-slate-100">${rows.map(r => `<div class="p-4"><div class="flex items-center gap-2 flex-wrap">${badge(r.type, r.tone)}<b class="text-sm">${esc(r.title)}</b></div><p class="font-mono text-xs text-slate-400 mt-1">${esc(r.meta)}</p></div>`).join('')}</div>`
+        : '<div class="card p-12 text-center text-sm text-slate-500">Тарих бос. Талдауды іске қосыңыз.</div>';
+    }
+    res.send(shell(req.me, 'history', head('Әрекеттер тарихы', 'Сақталған талдаулар мен нұсқалар журналы') + body, fl(req)));
+  }));
+
+  // --- Пайдаланушылар (тек әкімші) ---
+  app.get('/users', guard, h('users', async (req, res) => {
+    if (req.me.role !== 'admin') throw new Error('403 Forbidden: бұл бөлім тек әкімшіге арналған');
+    const list = await call(req.token, 'GET', '/api/users');
+    res.send(shell(req.me, 'users', head('Пайдаланушыларды басқару', 'Аккаунттарға рөл беру (RBAC)') +
+      `<div class="card overflow-hidden divide-y divide-slate-100">${list.map(u => `<form method="POST" action="/users/role" class="p-4 flex flex-col md:flex-row justify-between md:items-center gap-2">
+        <div><p class="font-medium text-sm">${esc(u.name)}</p><p class="font-mono text-xs text-slate-400">${esc(u.email)}</p></div>
+        <input type="hidden" name="email" value="${esc(u.email)}"><div class="flex gap-2">
+        <select name="role" ${u.email === req.me.email ? 'disabled' : ''} class="font-mono text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-blue-700">
+          ${['user', 'employee', 'admin'].map(r => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+        ${u.email === req.me.email ? '' : btn('Сақтау', 'ghost', 'class="!py-1 !text-xs"')}</div></form>`).join('')}</div>`, fl(req)));
+  }));
+  app.post('/users/role', guard, async (req, res) => {
+    try { await call(req.token, 'PATCH', `/api/users/${encodeURIComponent(req.body.email)}/role`, { role: req.body.role }); res.redirect('/users?t=green&msg=' + encodeURIComponent('Рөл жаңартылды')); }
+    catch (e) { res.redirect('/users?t=red&msg=' + encodeURIComponent(e.message)); }
+  });
+};
