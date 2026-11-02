@@ -182,5 +182,23 @@ const findTpl = (req, res) => {
   if (!canSee(req.user, t)) { res.status(403).json({ error: '403 Forbidden: бұл үлгі тек қызметкерлерге қолжетімді' }); return null; }
   return t;
 };
+app.get('/api/templates', need('template.read.public'), (req, res) =>
+  res.json(templates.map(t => canSee(req.user, t) ? t : { id: t.id, title: t.title, desc: t.desc, access: t.access, owner: t.owner, locked: true })));
+app.get('/api/templates/:id', need('template.read.public'), (req, res) => { const t = findTpl(req, res); if (t) res.json(t); });
+app.post('/api/templates/:id/use', need('template.read.public'), (req, res) => {
+  const t = findTpl(req, res); if (!t) return;
+  log.push({ owner: req.user.email, type: 'Үлгі', tone: 'violet', title: t.title, meta: `${now()} · редакторда ашылды` });
+  save(); res.json(t);
+});
+app.post('/api/templates', need('template.write'), (req, res) => {
+  const { title = '', desc = '', body = '', access = 'public' } = req.body;
+  if (title.trim().length < 3) return res.status(400).json({ error: 'Атауы кемінде 3 таңба болуы керек' });
+  if (!body.trim()) return res.status(400).json({ error: 'Үлгі мәтіні бос' });
+  if (!['public', 'employee'].includes(access)) return res.status(400).json({ error: 'Қолжетімділік түрі қате' });
+  const t = { id: Math.max(0, ...templates.map(x => x.id)) + 1, title: title.trim(), desc: desc.trim(), access, owner: req.user.email, body };
+  templates.push(t);
+  log.push({ owner: req.user.email, type: 'Үлгі', tone: 'violet', title: t.title, meta: `${now()} · жаңа үлгі қосылды` });
+  save(); res.status(201).json(t);
+});
 
 app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
