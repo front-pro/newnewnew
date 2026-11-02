@@ -174,22 +174,13 @@ app.delete('/api/documents/:id', need('doc.edit'), (req, res) => {
   docs.set(req.user.email, list.filter(x => x.id !== Number(req.params.id)));
   save(); res.json({ ok: true });
 });
-
-app.get('/api/history', need('history.read.own'), (req, res) =>
-  res.json(log.filter(r => r.owner === req.user.email).reverse()));
-
-// ---------- Users (admin) ----------
-app.get('/api/users', need('user.manage'), (req, res) => res.json(users.map(pub)));
-
-app.patch('/api/users/:email/role', need('user.manage'), (req, res) => {
-  const { role } = req.body;
-  if (!['user', 'employee', 'admin'].includes(role)) return res.status(400).json({ error: 'Рөл қате' });
-  if (req.params.email === req.user.email) return res.status(400).json({ error: 'Өз рөліңізді өзгертуге болмайды' });
-  const u = users.find(x => x.email === req.params.email);
-  if (!u) return res.status(404).json({ error: '404: Пайдаланушы табылмады' });
-  u.role = role;
-  save();
-  res.json(pub(u));
-});
+// ---------- Templates ----------
+const canSee = (u, t) => t.access === 'public' || PERMS[u.role].includes('template.read.employee');
+const findTpl = (req, res) => {
+  const t = templates.find(x => x.id === Number(req.params.id));
+  if (!t) { res.status(404).json({ error: '404: Үлгі табылмады' }); return null; }
+  if (!canSee(req.user, t)) { res.status(403).json({ error: '403 Forbidden: бұл үлгі тек қызметкерлерге қолжетімді' }); return null; }
+  return t;
+};
 
 app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
