@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookieHeader, hashPassword, isSameHash, newToken, publicUser, readStore, writeStore } from "../_lib";
+import { cookieHeader, hashPassword, safeHashEqual, newToken, publicUser, readStore, writeStore } from "../_lib";
 
-export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -9,7 +8,7 @@ export async function POST(request: Request) {
     const password = String(body.password || "");
     const store = await readStore();
     const user = store.users.find(item => item.email === email);
-    if (!user || !isSameHash(hashPassword(password, user.salt), user.hash))
+    if (!user || !safeHashEqual(hashPassword(password, user.salt), user.hash))
       return NextResponse.json({ error: "Email немесе құпиясөз қате" }, { status: 401 });
     const token = newToken();
     store.sessions[token] = user.id;

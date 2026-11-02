@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionToken, publicUser, readStore } from "../_lib";
 
-export const runtime = "nodejs";
 export async function GET(request: Request) {
   const store = await readStore();
   const userId = store.sessions[getSessionToken(request)];
