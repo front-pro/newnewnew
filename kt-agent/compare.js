@@ -1,19 +1,24 @@
 // Екі құжат мәтінін тармақ (clause) деңгейінде салыстыру.
-// Тармақ: "1.1. Мәтін" немесе жай жол. Ұқсастық: сөздер жиыны бойынша Жаккар коэффициенті.
+// Тармақ: "1.1. Мәтін" немесе жай жол. Ұқсастық: сөз түбірлері жиыны бойынша Жаккар коэффициенті.
+// Қазақ тілі жалғаулы тіл, сондықтан сөздің алғашқы 5 әрпі (түбір) салыстырылады.
+const tokens = s => s.match(/[\p{L}\p{N}]+/gu) || [];
+const stem = w => { w = w.toLowerCase(); return w.length > 5 ? w.slice(0, 5) : w; };
 const clauses = t => String(t).split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(s => {
   const m = s.match(/^(\d+(?:\.\d+)*)\.?\s+(.*)$/);
-  return { n: m ? m[1] : '', text: m ? m[2] : s };
+  const text = m ? m[2] : s, toks = tokens(text);
+  return { n: m ? m[1] : '', text, toks, set: new Set(toks.map(stem)) }; // жиын бір рет есептеледі
 });
-const words = s => new Set(s.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
-const sim = (a, b) => {
-  const x = words(a), y = words(b);
+const sim = (x, y, min = 0) => {
   if (!x.size || !y.size) return 0;
-  let i = 0; x.forEach(w => y.has(w) && i++);
+  const [s, l] = x.size <= y.size ? [x, y] : [y, x];
+  if (s.size / l.size < min) return 0; // жылдам кесу: бұдан жоғары ұқсастық мүмкін емес
+  let i = 0; s.forEach(w => l.has(w) && i++);
   return i / (x.size + y.size - i);
 };
 const norm = s => s.toLowerCase().replace(/\s+/g, ' ').trim();
 const cut = (s, n = 140) => (s.length > n ? s.slice(0, n) + '…' : s);
 const ref = c => (c ? (c.n ? c.n + '-тармақ' : 'жол') : 'Жоқ');
+
 
 function compare(aText, bText) {
   const A = clauses(aText), B = clauses(bText);
