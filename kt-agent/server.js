@@ -200,5 +200,13 @@ app.post('/api/templates', need('template.write'), (req, res) => {
   log.push({ owner: req.user.email, type: 'Үлгі', tone: 'violet', title: t.title, meta: `${now()} · жаңа үлгі қосылды` });
   save(); res.status(201).json(t);
 });
+app.delete('/api/templates/:id', need('template.write'), (req, res) => {
+  const t = templates.find(x => x.id === Number(req.params.id));
+  if (!t) return res.status(404).json({ error: '404: Үлгі табылмады' });
+  if (req.user.role !== 'admin' && t.owner !== req.user.email) return res.status(403).json({ error: '403 Forbidden: тек өз үлгіңізді жоя аласыз' });
+  templates = templates.filter(x => x !== t);
+  save(); res.json({ ok: true });
+});
 
-app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
+app.get('/api/history', need('history.read.own'), (req, res) =>
+  res.json(log.filter(r => r.owner === req.user.email).reverse()));
