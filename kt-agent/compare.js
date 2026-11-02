@@ -19,29 +19,22 @@ const norm = s => s.toLowerCase().replace(/\s+/g, ' ').trim();
 const cut = (s, n = 140) => (s.length > n ? s.slice(0, n) + '…' : s);
 const ref = c => (c ? (c.n ? c.n + '-тармақ' : 'жол') : 'Жоқ');
 
+// Сөз деңгейіндегі айырмашылық (LCS): s = ортақ, d = өшірілген, a = қосылған
+function wordDiff(a, b) {
+  if (a.length > 300 || b.length > 300) return null;
+  const x = a.map(w => w.toLowerCase()), y = b.map(w => w.toLowerCase());
+  const dp = Array.from({ length: x.length + 1 }, () => new Array(y.length + 1).fill(0));
+  for (let i = 1; i <= x.length; i++) for (let j = 1; j <= y.length; j++)
+    dp[i][j] = x[i - 1] === y[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  const out = []; let i = x.length, j = y.length;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && x[i - 1] === y[j - 1]) { out.push({ k: 's', w: b[j - 1] }); i--; j--; }
+    else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) { out.push({ k: 'a', w: b[j - 1] }); j--; }
+    else { out.push({ k: 'd', w: a[i - 1] }); i--; }
+  }
+  return out.reverse();
+}
 
-function compare(aText, bText) {
-  const A = clauses(aText), B = clauses(bText);
-  const usedA = new Set(), matched = new Map(); // B index -> A index
-  // 1) дәл сәйкестік
-  B.forEach((b, j) => {
-    const i = A.findIndex((a, k) => !usedA.has(k) && norm(a.text) === norm(b.text));
-    if (i >= 0) { usedA.add(i); matched.set(j, i); }
-  });
-  const changes = [];
-  const add = (type, title, description, a, b) => changes.push({ id: changes.length + 1, type, title, description, a, b });
-  // 2) жуық сәйкестік (өзгертілген тармақ)
-  B.forEach((b, j) => {
-    if (matched.has(j)) return;
-    let best = -1, bs = 0;
-    A.forEach((a, k) => { if (usedA.has(k)) return; const s = sim(a.text, b.text); if (s > bs) { bs = s; best = k; } });
-    if (best >= 0 && bs >= 0.45) {
-      usedA.add(best); matched.set(j, best);
-      add('CHANGED', 'Өзгертілген тармақ', `«${cut(A[best].text, 70)}» → «${cut(b.text, 70)}» (ұқсастық ${Math.round(bs * 100)}%)`, ref(A[best]), ref(b));
-    } else {
-      add('NEW_CLAUSE', 'Жаңа тармақ', cut(b.text), 'Жоқ', ref(b));
-    }
-  });
   // 3) жоғалған тармақтар
   A.forEach((a, k) => { if (!usedA.has(k)) add('LOST_FUNCTION', 'Жоғалған функция (Lost Function)', cut(a.text), ref(a), 'Жоқ (Жоғалған)'); });
   // 4) B ішінде қайталанатын / қабаттасатын тармақтар
