@@ -210,3 +210,16 @@ app.delete('/api/templates/:id', need('template.write'), (req, res) => {
 
 app.get('/api/history', need('history.read.own'), (req, res) =>
   res.json(log.filter(r => r.owner === req.user.email).reverse()));
+// ---------- Users (admin) ----------
+app.get('/api/users', need('user.manage'), (req, res) => res.json(users.map(pub)));
+
+app.patch('/api/users/:email/role', need('user.manage'), (req, res) => {
+  const { role } = req.body;
+  if (!['user', 'employee', 'admin'].includes(role)) return res.status(400).json({ error: 'Рөл қате' });
+  if (req.params.email === req.user.email) return res.status(400).json({ error: 'Өз рөліңізді өзгертуге болмайды' });
+  const u = users.find(x => x.email === req.params.email);
+  if (!u) return res.status(404).json({ error: '404: Пайдаланушы табылмады' });
+  u.role = role;
+  save();
+  res.json(pub(u));
+});
