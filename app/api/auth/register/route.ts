@@ -1,16 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
-import { cookieHeader, hashPassword, newToken, publicUser, readStore, writeStore } from "../_lib";
+import { cookieHeader, hashPassword, newToken, publicUser, readStore, withStoreLock, writeStore } from "../_lib";
 
-export async function POST(request: Request) {
+async function post(request: Request) {
   try {
     const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Сұрау объект болуы керек" }, { status: 400 });
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    if (!name) return NextResponse.json({ error: "Атыңызды енгізіңіз" }, { status: 400 });
+    if (!name || name.length > 100) return NextResponse.json({ error: "Атыңызды енгізіңіз (ең көбі 100 таңба)" }, { status: 400 });
     if (!/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: "Email форматы дұрыс емес" }, { status: 400 });
-    if (password.length < 8) return NextResponse.json({ error: "Құпиясөз кемінде 8 таңба болуы керек" }, { status: 400 });
+    if (email.length > 254) return NextResponse.json({ error: "Email тым ұзын" }, { status: 400 });
+    if (password.length < 8 || password.length > 1024) return NextResponse.json({ error: "Құпиясөз 8–1024 таңба болуы керек" }, { status: 400 });
     const store = await readStore();
     if (store.users.some(user => user.email === email)) return NextResponse.json({ error: "Бұл email тіркелген" }, { status: 409 });
     const salt = randomBytes(16).toString("hex");
@@ -22,5 +24,6 @@ export async function POST(request: Request) {
     const response = NextResponse.json({ user: publicUser(user) }, { status: 201 });
     response.headers.set("Set-Cookie", cookieHeader(token));
     return response;
-  } catch { return NextResponse.json({ error: "Тіркелу кезінде қате шықты" }, { status: 500 }); }
+  } catch (error) { return NextResponse.json({ error: error instanceof SyntaxError ? "JSON сұрауының форматы қате" : "Тіркелу кезінде қате шықты" }, { status: error instanceof SyntaxError ? 400 : 500 }); }
 }
+export const POST = (request: Request) => withStoreLock(() => post(request));

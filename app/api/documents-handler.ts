@@ -2,24 +2,18 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { summarizeDocument } from "../lib/documents";
 import type { SavedDocument } from "../lib/documents";
-import { currentUser, readStore, stamp, writeStore } from "./auth/_lib";
+import { currentUser, readStore, stamp, withStoreLock, writeStore } from "./auth/_lib";
 import type { Store, User } from "./auth/_lib";
 
 const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "private, no-store" } });
 const fail = (error: string, status = 400) => json({ error }, status);
 
-let saveQueue: Promise<unknown> = Promise.resolve();
-
-// Read the store inside the queue so simultaneous saves cannot share a base version.
 export async function handleDocumentRequest(request: Request, path: string[]) {
   const run = async () => {
     const store = await readStore();
     return handleDocuments(request, path, store, await currentUser(request, store));
   };
-  if (request.method === "GET") return run();
-  const result = saveQueue.then(run);
-  saveQueue = result.catch(() => {});
-  return result;
+  return withStoreLock(run);
 }
 
 export async function handleDocuments(request: Request, path: string[], store: Store, user: User | null) {

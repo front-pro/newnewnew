@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentUser, readStore, stamp, writeStore } from "../auth/_lib";
+import { currentUser, readStore, stamp, withStoreLock, writeStore } from "../auth/_lib";
 import type { Template, User } from "../auth/_lib";
 import { handleDocumentRequest } from "../documents-handler";
 
@@ -20,19 +20,22 @@ function compare(aText: string, bText: string) {
   const metrics = { total: changes.length, conflicts: count("CONFLICT"), lost: count("LOST_FUNCTION"), news: count("NEW_CLAUSE"), changed: count("CHANGED") };
   return { summary: `A құжаты (${a.length} тармақ) мен B құжаты (${b.length} тармақ) салыстырылды: ${metrics.total} өзгеріс табылды.`, metrics, changes };
 }
-const json = (data: unknown, status = 200) => NextResponse.json(data, { status });
+const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "private, no-store" } });
 const fail = (message: string, status = 400) => json({ error: message }, status);
 const accessible = (user: Awaited<ReturnType<typeof currentUser>>, template: Template) => template.access === "public" || user?.role === "employee" || user?.role === "admin";
-const apiError = (e: unknown) => fail(e instanceof Error ? e.message : "Сервер қатесі", 500);
+const apiError = (e: unknown) => e instanceof SyntaxError ? fail("JSON сұрауының форматы қате", 400) : fail("Сервер қатесі", 500);
 async function handle(request: Request) {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent), method = request.method;
     if (path[0] === "documents") return await handleDocumentRequest(request, path.slice(1));
     const store = await readStore(), user = await currentUser(request, store), role = user?.role || "guest";
     if (path[0] === "analysis" && path[1] === "run" && method === "POST") {
-      const body = await request.json(), a = String(body.a || ""), b = String(body.b || "");
+      const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
+      const a = String(body.a || ""), b = String(body.b || "");
       if (!a.trim() || !b.trim()) return fail("Екі құжаттың мәтінін енгізіңіз (A және B)");
       if (a.length > 200000 || b.length > 200000) return fail("Құжат тым үлкен (макс. 200 000 таңба)", 413);
+      const countLines = (text: string) => text.split(/\r?\n/).filter(line => line.trim()).length;
+      if (countLines(a) > 1000 || countLines(b) > 1000) return fail("Әр құжатта ең көбі 1 000 мәтіндік жол болуы керек", 413);
       const id = store.nextId++, result = { id, ...compare(a, b), isSaved: !!user };
       if (user) { store.analyses[String(id)] = { owner: user.email, result }; store.log.push({ owner: user.email, type: "ЖИ талдауы", tone: "blue", title: `Салыстыру #${id}`, meta: `${stamp()} · ${(result as ReturnType<typeof compare>).metrics.total} өзгеріс анықталды` }); await writeStore(store); }
       return json(result);
@@ -42,7 +45,11 @@ async function handle(request: Request) {
       const record = store.analyses[path[1]];
       if (!record || record.owner !== user.email) return fail("Талдау табылмады", 404);
       const result = record.result as { changes: { type: string; title: string; a: string; b: string; description: string }[] };
-      const quote = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
+      const quote = (value: string) => {
+        const text = String(value);
+        const safe = /^[\s]*[=+\-@]/.test(text) ? `'${text}` : text;
+        return `"${safe.replace(/"/g, '""')}"`;
+      };
       return json({ csv: ["type,title,a,b,description", ...result.changes.map(c => [c.type, c.title, c.a, c.b, c.description].map(quote).join(","))].join("\n") });
     }
     if (path[0] === "templates" && method === "GET" && path.length === 1) {
@@ -62,8 +69,9 @@ async function handle(request: Request) {
     }
     if (path[0] === "templates" && method === "POST" && path.length === 1) {
       if (!user || !["employee", "admin"].includes(role)) return fail("Үлгі қосуға рұқсат жоқ", user ? 403 : 401);
-      const body = await request.json(), title = String(body.title || "").trim(), desc = String(body.desc || "").trim(), text = String(body.body || ""), access = body.access === "employee" ? "employee" : "public";
-      if (title.length < 3) return fail("Атауы кемінде 3 таңба болуы керек"); if (!text.trim()) return fail("Үлгі мәтіні бос");
+      const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
+      const title = String(body.title || "").trim(), desc = String(body.desc || "").trim(), text = String(body.body || ""), access = body.access === "employee" ? "employee" : "public";
+      if (title.length < 3 || title.length > 160) return fail("Атауы 3–160 таңба болуы керек"); if (desc.length > 1000) return fail("Сипаттама тым ұзын"); if (!text.trim()) return fail("Үлгі мәтіні бос"); if (text.length > 200000) return fail("Үлгі мәтіні тым үлкен", 413);
       const template: Template = { id: Math.max(0, ...store.templates.map(t => t.id)) + 1, title, desc, body: text, access, owner: user.email };
       store.templates.push(template); store.log.push({ owner: user.email, type: "Үлгі", tone: "violet", title, meta: `${stamp()} · жаңа үлгі қосылды` }); await writeStore(store); return json(template, 201);
     }
@@ -77,14 +85,16 @@ async function handle(request: Request) {
     if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ name, email, role: userRole }) => ({ name, email, role: userRole }))); }
     if (path[0] === "users" && path[1] && method === "PATCH") {
       if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
-      const email = path[1], body = await request.json(), nextRole = String(body.role); if (!["user", "employee", "admin"].includes(nextRole)) return fail("Рөл қате");
+      const email = path[1], body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
+      const nextRole = String(body.role); if (!["user", "employee", "admin"].includes(nextRole)) return fail("Рөл қате");
       if (email === user?.email) return fail("Өз рөліңізді өзгертуге болмайды"); const target = store.users.find(item => item.email === email); if (!target) return fail("Пайдаланушы табылмады", 404);
       target.role = nextRole as User["role"]; await writeStore(store); return json({ name: target.name, email: target.email, role: target.role });
     }
     return fail("API маршрут табылмады", 404);
   } catch (error) { return apiError(error); }
 }
-export const GET = handle;
-export const POST = handle;
-export const PATCH = handle;
-export const DELETE = handle;
+const lockedHandle = (request: Request) => withStoreLock(() => handle(request));
+export const GET = lockedHandle;
+export const POST = lockedHandle;
+export const PATCH = lockedHandle;
+export const DELETE = lockedHandle;

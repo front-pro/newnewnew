@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookieHeader, getSessionToken, readStore, writeStore } from "../_lib";
+import { cookieHeader, getSessionToken, readStore, withStoreLock, writeStore } from "../_lib";
 
-export async function POST(request: Request) {
+async function post(request: Request) {
   const store = await readStore();
   delete store.sessions[getSessionToken(request)];
   await writeStore(store);
@@ -9,3 +9,4 @@ export async function POST(request: Request) {
   response.headers.set("Set-Cookie", cookieHeader("").replace("Max-Age=604800", "Max-Age=0"));
   return response;
 }
+export const POST = (request: Request) => withStoreLock(() => post(request));
