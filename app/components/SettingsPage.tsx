@@ -1,6 +1,6 @@
 "use client";
 
-import { button, card } from "./styles";
+import { card } from "./styles";
 import type { WorkspaceProps } from "./workspace-context";
 
 export default function SettingsPage({ props }: { props: WorkspaceProps }) {

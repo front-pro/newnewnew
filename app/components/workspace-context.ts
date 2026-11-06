@@ -1,12 +1,12 @@
+import type { DocumentDetail, DocumentVersion } from "../lib/documents";
 import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 
-export type Tab = "compare" | "templates" | "editor" | "history" | "users" | "documents" | "settings";
+export type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "users" | "settings";
 export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
 export type Change = { type: string; title: string; description: string; a: string; b: string };
 export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[] };
 export type SessionUser = { id: string; name: string; email: string; role: string };
 export type UserRow = { name: string; email: string; role: string };
-export type DocumentRecord = { id: string; title: string; text: string; updatedAt: string; version: number };
 export type UserSettings = { autosaveDraft: boolean; editorFontSize: number };
 export type AuthMode = "login" | "register" | null;
 
@@ -24,6 +24,15 @@ export type WorkspaceProps = {
   templates: Template[];
   editorText: string; setEditorText: Dispatch<SetStateAction<string>>;
   editorTitle: string; setEditorTitle: Dispatch<SetStateAction<string>>;
+  documentId: string | null;
+  editorVersion: number;
+  editorBusy: boolean;
+  newDocument: () => void;
+  openDocument: (document: DocumentDetail, version?: DocumentVersion) => void;
+  onDocumentsSaved: () => Promise<void>;
+  onDocumentDeleted: (id: string) => void;
+  settings: UserSettings;
+  setSettings: Dispatch<SetStateAction<UserSettings>>;
   openTemplate: Template | null;
   notice: string; setNotice: Dispatch<SetStateAction<string>>;
   history: string[];
@@ -48,11 +57,4 @@ export type WorkspaceProps = {
   authPassword: string; setAuthPassword: Dispatch<SetStateAction<string>>;
   authBusy: boolean;
   cards: ReactNode;
-  documents: DocumentRecord[];
-  openDocument: (document: DocumentRecord) => void;
-  deleteDocument: (document: DocumentRecord) => Promise<void>;
-  activeDocumentId: string | null;
-  setActiveDocumentId: Dispatch<SetStateAction<string | null>>;
-  settings: UserSettings;
-  setSettings: Dispatch<SetStateAction<UserSettings>>;
 };
