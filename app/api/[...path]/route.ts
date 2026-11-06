@@ -45,15 +45,37 @@ async function handle(request: Request) {
     }
     if (path[0] === "documents" && path[1] === "me" && method === "GET") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
-      return json({ text: store.docs[user.email] || "", version: store.versions[user.email] || 0 });
+      const documents = store.documents[user.email] || (store.docs[user.email] ? [{ id: "legacy", title: "Құжат.txt", text: store.docs[user.email], updatedAt: stamp(), version: store.versions[user.email] || 1 }] : []);
+      return json({ text: store.docs[user.email] || documents.at(-1)?.text || "", version: store.versions[user.email] || 0, documents });
     }
-    if (path[0] === "documents" && method === "POST") {
+    if (path[0] === "documents" && path.length === 1 && method === "POST") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
-      const body = await request.json(), text = String(body.text || "");
+      const body = await request.json(), text = String(body.text || ""), title = String(body.title || "Құжат.txt").slice(0, 180);
       if (!text.trim()) return fail("Құжат мәтіні бос");
       if (text.length > 200000) return fail("Құжат тым үлкен", 413);
-      const version = (store.versions[user.email] || 0) + 1; store.versions[user.email] = version; store.docs[user.email] = text;
-      store.log.push({ owner: user.email, type: "Редактор", tone: "green", title: "Құжат", meta: `${stamp()} · v${version}.0` }); await writeStore(store); return json({ version });
+      const documents = store.documents[user.email] || (store.docs[user.email] ? [{ id: "legacy", title: "Құжат.txt", text: store.docs[user.email], updatedAt: stamp(), version: store.versions[user.email] || 1 }] : []);
+      let document = body.id ? documents.find(item => item.id === String(body.id)) : undefined;
+      if (body.id && !document) return fail("Құжат табылмады", 404);
+      if (document) { document.title = title; document.text = text; document.updatedAt = stamp(); document.version += 1; }
+      else { document = { id: String(store.nextId++), title, text, updatedAt: stamp(), version: 1 }; documents.push(document); }
+      store.documents[user.email] = documents;
+      store.docs[user.email] = text;
+      store.versions[user.email] = document.version;
+      store.log.push({ owner: user.email, type: "Редактор", tone: "green", title, meta: stamp() + " · v" + document.version + ".0" });
+      await writeStore(store);
+      return json({ id: document.id, version: document.version });
+    }
+    if (path[0] === "documents" && path[1] && path[1] !== "me" && method === "DELETE") {
+      if (!user) return fail("Жүйеге кіріңіз", 401);
+      const documents = store.documents[user.email] || [];
+      const nextDocuments = documents.filter(item => item.id !== path[1]);
+      if (nextDocuments.length === documents.length) return fail("Құжат табылмады", 404);
+      store.documents[user.email] = nextDocuments;
+      const latest = nextDocuments.at(-1);
+      if (latest) { store.docs[user.email] = latest.text; store.versions[user.email] = latest.version; }
+      else { delete store.docs[user.email]; delete store.versions[user.email]; }
+      await writeStore(store);
+      return json({ ok: true });
     }
     if (path[0] === "templates" && method === "GET" && path.length === 1) {
       if (!user) return fail("Жүйеге кіріңіз", 401);

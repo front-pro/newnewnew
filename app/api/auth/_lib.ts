@@ -4,9 +4,10 @@ import path from "node:path";
 
 export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin" };
 export type Template = { id: number; title: string; desc: string; access: "public" | "employee"; owner: string; body: string };
+export type StoredDocument = { id: string; title: string; text: string; updatedAt: string; version: number };
 export type Store = {
   users: User[]; sessions: Record<string, string>; templates: Template[]; analyses: Record<string, { owner: string; result: Record<string, unknown> }>;
-  docs: Record<string, string>; versions: Record<string, number>; log: { owner: string; type: string; tone: string; title: string; meta: string }[]; nextId: number;
+  docs: Record<string, string>; documents: Record<string, StoredDocument[]>; versions: Record<string, number>; log: { owner: string; type: string; tone: string; title: string; meta: string }[]; nextId: number;
 };
 const pathToStore = path.join(process.cwd(), ".data", "agent.json");
 const makeUser = (name: string, email: string, password: string, role: User["role"]): User => {
@@ -19,13 +20,13 @@ const templates: Template[] = [
   { id: 3, title: "Бөлімше ережесі және функциялар матрицасы", desc: "Қайта құрылымдау кезіндегі ішкі департамент регламенті.", access: "employee", owner: "system", body: `[БӨЛІМШЕ АТАУЫ] ТУРАЛЫ ЕРЕЖЕ\n\n1.1. Бөлімше ұйымның құрылымдық бөлімшесі болып табылады.\n1.2. Бөлімше өз қызметінде заңнаманы және ішкі регламентті басшылыққа алады.\n2.1. Құжаттарды автоматты талдауды қамтамасыз ету.\n2.2. Нормативтік құжаттар редакцияларындағы қақтығыстарды анықтау.\n3.1. Құжаттарды архивтеу және сақтау.` },
 ];
 function initialStore(): Store {
-  return { users: [makeUser("Әкімші", "admin@kt.kz", "Admin123", "admin"), makeUser("Қызметкер", "employee@kt.kz", "Employee123", "employee"), makeUser("Пайдаланушы", "user@kt.kz", "User12345", "user")], sessions: {}, templates, analyses: {}, docs: {}, versions: {}, log: [], nextId: 1 };
+  return { users: [makeUser("Әкімші", "admin@kt.kz", "Admin123", "admin"), makeUser("Қызметкер", "employee@kt.kz", "Employee123", "employee"), makeUser("Пайдаланушы", "user@kt.kz", "User12345", "user")], sessions: {}, templates, analyses: {}, docs: {}, documents: {}, versions: {}, log: [], nextId: 1 };
 }
 export async function readStore(): Promise<Store> {
   try {
     const raw = JSON.parse(await readFile(pathToStore, "utf8")) as Partial<Store>;
     const defaults = initialStore();
-    return { ...defaults, ...raw, users: raw.users || defaults.users, templates: raw.templates || defaults.templates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: raw.log || [], sessions: raw.sessions || {}, nextId: raw.nextId || 1 };
+    return { ...defaults, ...raw, users: raw.users || defaults.users, templates: raw.templates || defaults.templates, analyses: raw.analyses || {}, docs: raw.docs || {}, documents: raw.documents || {}, versions: raw.versions || {}, log: raw.log || [], sessions: raw.sessions || {}, nextId: raw.nextId || 1 };
   } catch { return initialStore(); }
 }
 export async function writeStore(store: Store) { await mkdir(path.dirname(pathToStore), { recursive: true }); await writeFile(pathToStore, JSON.stringify(store, null, 2), "utf8"); }
