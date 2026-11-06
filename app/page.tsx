@@ -7,6 +7,7 @@ import AuthDialog from "./components/AuthDialog";
 import AppFooter from "./components/AppFooter";
 import { button, card } from "./components/styles";
 import type { WorkspaceProps } from "./components/workspace-context";
+import { readDocumentFile } from "./lib/read-document";
 
 type Tab = "compare" | "templates" | "editor" | "history" | "users";
 type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
@@ -43,7 +44,7 @@ export default function Home() {
   useEffect(() => { try { const raw = localStorage.getItem("kt-agent-state"); if (raw) { const d = JSON.parse(raw); if (d.editorText) setEditorText(d.editorText); } } catch {} setReady(true); fetch("/api/auth/me").then(r => r.json()).then(async d => { if (d.user) { setSessionUser(d.user); await refreshAccountData(d.user); } }).catch(() => {}); }, []);
   useEffect(() => { if (ready) localStorage.setItem("kt-agent-state", JSON.stringify({ editorText })); }, [ready, editorText]);
   const nav: [Tab, string][] = [["compare", "Талдау (A/B)"], ["templates", "Үлгілер"], ["editor", "Редактор"], ["history", "Тарих"], ["users", "Пайдаланушылар"]];
-  const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setter(await file.text()); setNotice(`${file.name} файлы жүктелді`); };
+  const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; try { setter(await readDocumentFile(file)); setNotice(`${file.name} файлы жүктелді`); } catch (error) { setNotice(error instanceof Error ? error.message : "Файлды оқу мүмкін болмады."); } finally { e.target.value = ""; } };
   const startAnalysis = async () => { if (!a.trim() || !b.trim()) { setNotice("Екі құжатты да енгізіңіз."); return; } try { const response = await fetch("/api/analysis/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a, b }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error); setReport(result); if (sessionUser) await refreshAccountData(sessionUser); setNotice("Талдау аяқталды."); } catch (error) { setNotice(error instanceof Error ? error.message : "Талдау орындалмады"); } };
   const editTemplate = async (t: Template) => { if (t.locked) { setNotice("Бұл үлгі қызметкерлерге арналған."); return; } await fetch(`/api/templates/${t.id}/use`, { method: "POST" }); setEditorText(t.body); setEditorTitle(`${t.title}.txt`); setOpenTemplate(null); setTab("editor"); setNotice(`«${t.title}» үлгісі редакторда ашылды.`); };
   const saveEditor = async () => { if (!editorText.trim()) { setNotice("Құжат мәтіні бос."); return; } try { const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: editorText }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setNotice(`Серверге сақталды. Нұсқа: v${data.version}.0`); if (sessionUser) await refreshAccountData(sessionUser); } catch (error) { setNotice(error instanceof Error ? error.message : "Сақтау орындалмады"); } };
