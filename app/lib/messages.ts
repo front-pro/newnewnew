@@ -979,5 +979,18 @@ export const messages: Record<string, readonly [string, string]> = {
   "Екі тармақ мазмұны {percent}% сәйкес: ": [
     "Содержание двух пунктов совпадает на {percent}%: ",
     "Two clauses have {percent}% similar content: "
-  ]
+  ],
+  "Профиль и баптаулар": ["Профиль и настройки", "Profile and settings"],
+  "Профильді өңдеу": ["Редактирование профиля", "Edit profile"],
+  "Атыңыз бен аватарыңызды жаңартыңыз.": ["Обновите имя и аватар.", "Update your name and avatar."],
+  "Профиль аватары": ["Аватар профиля", "Profile avatar"],
+  "Аватар жүктеу": ["Загрузить аватар", "Upload avatar"],
+  "Аватарды алып тастау": ["Удалить аватар", "Remove avatar"],
+  "Email өзгертілмейді.": ["Email изменить нельзя.", "Email cannot be changed."],
+  "Профильді сақтау": ["Сохранить профиль", "Save profile"],
+  "Профиль жаңартылды.": ["Профиль обновлён.", "Profile updated."],
+  "PNG, JPG, WEBP немесе GIF форматындағы суретті таңдаңыз.": ["Выберите изображение PNG, JPG, WEBP или GIF.", "Choose a PNG, JPG, WEBP, or GIF image."],
+  "Аватар суреті 1 МБ-тан аспауы керек.": ["Размер аватара не должен превышать 1 МБ.", "Avatar image must be no larger than 1 MB."],
+  "Аватар файлын оқу мүмкін болмады.": ["Не удалось прочитать файл аватара.", "Could not read the avatar file."],
+  "Профильді сақтау мүмкін болмады.": ["Не удалось сохранить профиль.", "Could not save profile."],
 };

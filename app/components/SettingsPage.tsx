@@ -1,4 +1,6 @@
 "use client";
+import { useState, type ChangeEvent, type FormEvent } from "react";
+import Image from "next/image";
 import { roleKey } from "../lib/i18n";
 import { useLanguage } from "./LanguageProvider";
 import { card } from "./styles";
@@ -7,10 +9,43 @@ export default function SettingsPage({ props }: {
     props: WorkspaceProps;
 }) {
     const { tr } = useLanguage();
-    const { sessionUser, settings, setSettings } = props;
+    const { sessionUser, settings, setSettings, setSessionUser, setNotice } = props;
     const update = (values: Partial<typeof settings>) => setSettings((current) => ({ ...current, ...values }));
+    const [profileName, setProfileName] = useState(sessionUser?.name || "");
+    const [avatar, setAvatar] = useState(sessionUser?.avatar || "");
+    const [profileBusy, setProfileBusy] = useState(false);
+    const onAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) { setNotice(tr("PNG, JPG, WEBP немесе GIF форматындағы суретті таңдаңыз.")); event.target.value = ""; return; }
+      if (file.size > 1024 * 1024) { setNotice(tr("Аватар суреті 1 МБ-тан аспауы керек.")); event.target.value = ""; return; }
+      const reader = new FileReader();
+      reader.onload = () => setAvatar(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => setNotice(tr("Аватар файлын оқу мүмкін болмады."));
+      reader.readAsDataURL(file);
+    };
+    const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault(); setProfileBusy(true);
+      try {
+        const response = await fetch("/api/auth/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: profileName, avatar: avatar || null }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || tr("Профильді сақтау мүмкін болмады."));
+        setSessionUser(data.user); setProfileName(data.user.name); setAvatar(data.user.avatar || ""); setNotice(tr("Профиль жаңартылды."));
+      } catch (error) { setNotice(error instanceof Error ? error.message : tr("Профильді сақтау мүмкін болмады.")); }
+      finally { setProfileBusy(false); }
+    };
     return <section className="space-y-5">
     <div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tr("Баптаулар")}</h1><p className="mt-1 text-slate-500">{tr("Құжаттармен жұмыс істеу параметрлері")}</p></div>
+    {sessionUser && <form onSubmit={saveProfile} className={card + " space-y-4"}>
+      <div><h2 className="font-semibold">{tr("Профильді өңдеу")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Атыңыз бен аватарыңызды жаңартыңыз.")}</p></div>
+      <div className="flex flex-wrap items-center gap-4">
+        {avatar ? <Image src={avatar} alt={tr("Профиль аватары")} width={80} height={80} unoptimized className="size-20 rounded-full border border-slate-200 object-cover"/> : <div aria-hidden="true" className="flex size-20 items-center justify-center rounded-full bg-blue-600 text-2xl font-semibold text-white">{sessionUser.name.trim().charAt(0).toUpperCase()}</div>}
+        <div className="flex flex-wrap gap-2"><label className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50">{tr("Аватар жүктеу")}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onAvatarChange} className="sr-only"/></label>{avatar && <button type="button" onClick={() => setAvatar("")} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700">{tr("Аватарды алып тастау")}</button>}</div>
+      </div>
+      <label className="block max-w-md space-y-1 text-sm font-medium">{tr("Аты-жөні")}<input required minLength={2} maxLength={80} value={profileName} onChange={(event) => setProfileName(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-blue-500"/></label>
+      <p className="text-xs text-slate-500">Email: {sessionUser.email} · {tr("Email өзгертілмейді.")}</p>
+      <button disabled={profileBusy} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{profileBusy ? tr("Сақталуда…") : tr("Профильді сақтау")}</button>
+    </form>}
     {sessionUser && <section className={card}>
       <h2 className="font-semibold">{tr("Аккаунт")}</h2>
       <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
