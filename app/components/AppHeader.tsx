@@ -1,0 +1,11 @@
+"use client";
+
+import { button } from "./styles";
+import type { WorkspaceProps } from "./workspace-context";
+export default function AppHeader({ props }: { props: WorkspaceProps }) {
+  const { nav } = props;
+  const { tab, setTab, setOpenTemplate, sessionUser, logout, setAuthMode } = props;
+  return (
+    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:px-8"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-5"><div className="flex items-center gap-2"><span className="rounded-lg bg-blue-600 px-2.5 py-1.5 font-mono font-bold text-white">KT</span><b>Neural Agent</b><span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-xs text-emerald-700">● online</span></div><nav className="flex flex-wrap gap-1">{nav.filter(([id]) => id !== "users" || sessionUser?.role === "admin").map(([id, label]) => <button key={id} onClick={() => { setTab(id); setOpenTemplate(null); }} className={`rounded-lg px-3 py-2 text-sm font-medium ${tab === id ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200" : "text-slate-500 hover:bg-slate-100"}`}>{label}</button>)}</nav></div><div className="flex items-center gap-2">{sessionUser ? <><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs"><b>{sessionUser.name}</b><div className="font-mono text-blue-700">{sessionUser.role}</div></div><button onClick={logout} className={`${button} border border-slate-200 bg-white text-slate-700`}>Шығу</button></> : <><button onClick={() => setAuthMode("login")} className={`${button} border border-slate-200 bg-white text-slate-700`}>Кіру</button><button onClick={() => setAuthMode("register")} className={`${button} bg-blue-600 text-white hover:bg-blue-700`}>Тіркелу</button></>}</div></div></header>
+  );
+}
