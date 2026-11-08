@@ -5,13 +5,13 @@ import MainContent from "./components/MainContent";
 import AuthDialog from "./components/AuthDialog";
 import AppFooter from "./components/AppFooter";
 import { button, card } from "./components/styles";
-import type { HistoryRow, UserSettings, WorkspaceProps } from "./components/workspace-context";
+import type { HistoryRow, WorkspaceProps } from "./components/workspace-context";
 import { readDocumentFile } from "./lib/read-document";
 import { matchesSearch } from "./lib/search";
 import { LanguageProvider, useLanguage } from "./components/LanguageProvider";
 import { ThemeProvider } from "./components/ThemeProvider";
 import type { DocumentDetail, DocumentVersion } from "./lib/documents";
-type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "companies" | "users" | "settings";
+type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "companies" | "users";
 type Template = {
     id: number;
     title: string;
@@ -66,7 +66,6 @@ function Workspace() {
     const [tab, setTab] = useState<Tab>("compare");
     const [a, setA] = useState(sampleA), [b, setB] = useState(sampleB), [report, setReport] = useState<Report | null>(null);
     const [templates, setTemplates] = useState(initialTemplates), [editorText, setEditorText] = useState(""), [editorTitle, setEditorTitle] = useState(tr("Құжат.txt"));
-    const [settings, setSettings] = useState<UserSettings>({ autosaveDraft: true, editorFontSize: 14, editorWordWrap: true, editorSpellcheck: false });
     const [documentId, setDocumentId] = useState<string | null>(null), [editorVersion, setEditorVersion] = useState(0), [editorBusy, setEditorBusy] = useState(false);
     const [editorWorkspaceId, setEditorWorkspaceId] = useState<string | null>(null);
     const [openTemplate, setOpenTemplate] = useState<Template | null>(null), [notice, setNotice] = useState(""), [history, setHistory] = useState<HistoryRow[]>([]), [ready, setReady] = useState(false);
@@ -103,11 +102,6 @@ function Workspace() {
     useEffect(() => {
         queueMicrotask(() => {
             try {
-                const storedSettings = localStorage.getItem("kt-agent-settings");
-                if (storedSettings) {
-                    const saved = JSON.parse(storedSettings);
-                    setSettings({ autosaveDraft: true, editorFontSize: 14, editorWordWrap: true, editorSpellcheck: false, ...saved });
-                }
                 const raw = localStorage.getItem("kt-agent-state");
                 if (raw) {
                     const d = JSON.parse(raw);
@@ -127,18 +121,12 @@ function Workspace() {
         }).catch(() => { });
     }, [refreshAccountData, restoreAccountDocument]);
     useEffect(() => {
-        if (ready) {
-            if (settings.autosaveDraft)
-                localStorage.setItem("kt-agent-state", JSON.stringify({ editorText }));
-            else
-                localStorage.removeItem("kt-agent-state");
-            localStorage.setItem("kt-agent-settings", JSON.stringify(settings));
-        }
-    }, [ready, editorText, settings]);
+        if (ready) localStorage.setItem("kt-agent-state", JSON.stringify({ editorText }));
+    }, [ready, editorText]);
     const nav: [
         Tab,
         string
-    ][] = [["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ["companies", tr("Компаниялар")], ["users", tr("Пайдаланушылар")], ["settings", tr("Баптаулар")]];
+    ][] = [["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ["companies", tr("Компаниялар")], ["users", tr("Пайдаланушылар")]];
     const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file)
@@ -317,7 +305,7 @@ function Workspace() {
     const filteredTemplates = templates.filter(t => matchesSearch(templateQuery, [t.title, t.desc, t.locked ? "" : t.body, t.owner], locale));
     const filteredTemplateCount = filteredTemplates.length;
     const cards = filteredTemplates.map(t => <article key={t.id} className={`${card} flex min-h-60 flex-col gap-3 ${t.locked ? "opacity-60" : ""}`}><span className={`w-fit rounded-md border px-2 py-1 font-mono text-[11px] font-semibold ${t.locked ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{t.locked ? tr("Құлыпталған 🔒") : tr(t.access === "public" || t.access === "Жалпы · Public" ? "Жалпы · Public" : "Корпоративтік · Employee")}</span><h3 className="font-bold">{tr(t.title)}</h3><p className="text-sm text-slate-500">{tr(t.desc)}</p><div className="mt-auto flex flex-wrap gap-2"><button disabled={t.locked} className={`${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`} onClick={() => t.locked ? setNotice(tr("Бұл үлгі қызметкерлерге арналған.")) : setOpenTemplate(t)}>{tr("Үлгіні ашу")}</button><button disabled={t.locked} className={`${button} bg-blue-600 text-white hover:bg-blue-700`} onClick={() => editTemplate(t)}>{tr("Үлгіні өзгерту")}</button>{!t.locked && <button className={`${button} border border-slate-200 bg-white text-slate-700`} onClick={() => downloadText(t.body, `template-${t.id}.txt`)}>⬇ .txt</button>}{!t.locked && sessionUser && (sessionUser.role === "admin" || t.owner === sessionUser.email) && <button className={`${button} border border-rose-200 bg-white text-rose-700`} onClick={() => deleteTemplate(t)}>{tr("Жою")}</button>}</div></article>);
-    const viewProps: WorkspaceProps = { nav, tab, setTab, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, templates, editorText, setEditorText, editorTitle, setEditorTitle, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, settings, setSettings, openTemplate, notice, setNotice, history, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authBusy };
+    const viewProps: WorkspaceProps = { nav, tab, setTab, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, templates, editorText, setEditorText, editorTitle, setEditorTitle, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authBusy };
     return <div className="workspace-shell min-h-screen text-slate-900">
     <AppHeader props={viewProps}/>
     <MainContent props={viewProps}/>

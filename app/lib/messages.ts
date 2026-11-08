@@ -91,10 +91,6 @@ export const messages: Record<string, readonly [string, string]> = {
     "Пользователи",
     "Users"
   ],
-  "Баптаулар": [
-    "Настройки",
-    "Settings"
-  ],
   "{p0} файлы жүктелді": [
     "Файл {p0} загружен",
     "File {p0} uploaded"
@@ -1035,7 +1031,6 @@ export const messages: Record<string, readonly [string, string]> = {
     "Содержание двух пунктов совпадает на {percent}%: ",
     "Two clauses have {percent}% similar content: "
   ],
-  "Профиль и баптаулар": ["Профиль и настройки", "Profile and settings"],
   "Профильді өңдеу": ["Редактирование профиля", "Edit profile"],
   "Атыңыз бен аватарыңызды жаңартыңыз.": ["Обновите имя и аватар.", "Update your name and avatar."],
   "Профиль аватары": ["Аватар профиля", "Profile avatar"],
