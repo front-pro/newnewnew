@@ -4,11 +4,14 @@ import Image from "next/image";
 import { roleKey } from "../lib/i18n";
 import { useLanguage } from "./LanguageProvider";
 import { card } from "./styles";
+import { useTheme } from "./ThemeProvider";
+import LanguageSelect from "./LanguageSelect";
 import type { WorkspaceProps } from "./workspace-context";
 export default function SettingsPage({ props }: {
     props: WorkspaceProps;
 }) {
     const { tr } = useLanguage();
+    const { theme, setTheme } = useTheme();
     const { sessionUser, settings, setSettings, setSessionUser, setNotice } = props;
     const update = (values: Partial<typeof settings>) => setSettings((current) => ({ ...current, ...values }));
     const [profileName, setProfileName] = useState(sessionUser?.name || "");
@@ -31,7 +34,7 @@ export default function SettingsPage({ props }: {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || tr("Профильді сақтау мүмкін болмады."));
         setSessionUser(data.user); setProfileName(data.user.name); setAvatar(data.user.avatar || ""); setNotice(tr("Профиль жаңартылды."));
-      } catch (error) { setNotice(error instanceof Error ? error.message : tr("Профильді сақтау мүмкін болмады.")); }
+      } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Профильді сақтау мүмкін болмады.")); }
       finally { setProfileBusy(false); }
     };
     return <section className="space-y-5">
@@ -55,6 +58,11 @@ export default function SettingsPage({ props }: {
       </dl>
     </section>}
     <section className={card + " space-y-5"}>
+      <div><h2 className="font-semibold">{tr("Көрініс және тіл")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Интерфейс көрінісі мен тілін таңдаңыз.")}</p></div>
+      <label className="block max-w-md space-y-2"><span className="block text-sm font-medium">{tr("Тақырып")}</span><select value={theme} onChange={(event) => setTheme(event.target.value === "dark" ? "dark" : "light")} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"><option value="light">{tr("Жарық")}</option><option value="dark">{tr("Қараңғы")}</option></select></label>
+      <LanguageSelect />
+    </section>
+    <section className={card + " space-y-5"}>
       <div><h2 className="font-semibold">{tr("Редактор")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Бұл параметрлер осы браузерде сақталады.")}</p></div>
       <label className="flex items-start gap-3">
         <input type="checkbox" checked={settings.autosaveDraft} onChange={(event) => update({ autosaveDraft: event.target.checked })} className="mt-1 size-4 accent-blue-600"/>
@@ -64,6 +72,8 @@ export default function SettingsPage({ props }: {
         <span className="block text-sm font-medium">{tr("Редактор қаріп өлшемі:")} {settings.editorFontSize}px</span>
         <input type="range" min={12} max={20} step={1} value={settings.editorFontSize} onChange={(event) => update({ editorFontSize: Number(event.target.value) })} className="w-full accent-blue-600"/>
       </label>
+      <label className="flex items-start gap-3"><input type="checkbox" checked={settings.editorWordWrap} onChange={(event) => update({ editorWordWrap: event.target.checked })} className="mt-1 size-4 accent-blue-600"/><span><span className="block text-sm font-medium">{tr("Редакторда ұзын жолдарды тасымалдау")}</span><span className="mt-1 block text-xs text-slate-500">{tr("Өшірсеңіз, жолдар көлденең айналдырумен көрсетіледі.")}</span></span></label>
+      <label className="flex items-start gap-3"><input type="checkbox" checked={settings.editorSpellcheck} onChange={(event) => update({ editorSpellcheck: event.target.checked })} className="mt-1 size-4 accent-blue-600"/><span><span className="block text-sm font-medium">{tr("Емлені тексеру")}</span><span className="mt-1 block text-xs text-slate-500">{tr("Браузер мәтін енгізген кезде емлені тексереді.")}</span></span></label>
       <p role="status" className="text-xs text-emerald-700">{tr("Өзгерістер автоматты түрде сақталады.")}</p>
     </section>
   </section>;

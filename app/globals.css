@@ -12,15 +12,38 @@
   --font-mono: "Cascadia Code", Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+html.dark {
+  color-scheme: dark;
+  --background: #0b1220;
+  --foreground: #e2e8f0;
+}
+
+html.dark body { background: var(--background); color: var(--foreground); }
+html.dark [class~="bg-white"], html.dark [class~="bg-white/95"], html.dark [class~="bg-white/70"] { background-color: #111c2e !important; }
+html.dark [class~="bg-slate-50"], html.dark [class~="bg-slate-50/70"] { background-color: #172338 !important; }
+html.dark [class~="bg-slate-100"] { background-color: #1e293b !important; }
+html.dark [class~="text-slate-900"], html.dark [class~="text-slate-800"], html.dark [class~="text-slate-700"] { color: #e2e8f0 !important; }
+html.dark [class~="text-slate-600"], html.dark [class~="text-slate-500"] { color: #aab8cb !important; }
+html.dark [class~="text-slate-400"] { color: #91a0b5 !important; }
+html.dark [class~="border-slate-200"], html.dark [class~="border-slate-100"] { border-color: #334155 !important; }
+html.dark [class~="divide-slate-100"] > :not([hidden]) ~ :not([hidden]) { border-color: #334155 !important; }
+html.dark input:not([type="checkbox"]):not([type="range"]), html.dark textarea, html.dark select { background-color: #111c2e; color: #e2e8f0; border-color: #475569; }
+html.dark input::placeholder, html.dark textarea::placeholder { color: #91a0b5; }
+html.dark [class~="bg-blue-50"] { background-color: #172b48 !important; }
+html.dark [class~="text-blue-700"], html.dark [class~="text-blue-600"] { color: #93c5fd !important; }
+html.dark [class~="border-blue-100"], html.dark [class~="border-blue-200"] { border-color: #315278 !important; }
+html.dark [class~="bg-emerald-50"] { background-color: #12352f !important; }
+html.dark [class~="text-emerald-700"] { color: #6ee7b7 !important; }
+html.dark [class~="border-emerald-200"] { border-color: #17614e !important; }
+html.dark [class~="bg-rose-50"] { background-color: #3b1e2b !important; }
+html.dark [class~="text-rose-700"], html.dark [class~="text-rose-600"] { color: #fda4af !important; }
+html.dark [class~="border-rose-200"] { border-color: #713449 !important; }
+html.dark [class~="bg-violet-50"] { background-color: #28203f !important; }
+html.dark [class~="text-violet-700"] { color: #c4b5fd !important; }
+html.dark [class~="border-violet-200"] { border-color: #504078 !important; }

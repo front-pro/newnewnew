@@ -8,7 +8,7 @@ export type Report = { id: number; isSaved?: boolean; summary: string; metrics: 
 export type SessionUser = { id: string; name: string; email: string; role: string; avatar?: string | null };
 export type UserRow = { name: string; email: string; role: string };
 export type HistoryRow = { title: string; type: string; meta: string };
-export type UserSettings = { autosaveDraft: boolean; editorFontSize: number };
+export type UserSettings = { autosaveDraft: boolean; editorFontSize: number; editorWordWrap: boolean; editorSpellcheck: boolean };
 export type AuthMode = "login" | "register" | null;
 
 export type WorkspaceProps = {

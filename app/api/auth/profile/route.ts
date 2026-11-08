@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { currentUser, publicUser, readStore, writeStore } from "../_lib";
+import { currentUser, publicUser, readStore, withStoreLock, writeStore } from "../_lib";
 
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status });
 
-export async function PATCH(request: Request) {
+async function patch(request: Request) {
   try {
     const store = await readStore();
     const user = await currentUser(request, store);
@@ -28,3 +28,4 @@ export async function PATCH(request: Request) {
     return json({ error: "Профильді сақтау кезінде қате шықты" }, 500);
   }
 }
+export const PATCH = (request: Request) => withStoreLock(() => patch(request));

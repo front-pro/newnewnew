@@ -9,6 +9,7 @@ import type { HistoryRow, UserSettings, WorkspaceProps } from "./components/work
 import { readDocumentFile } from "./lib/read-document";
 import { matchesSearch } from "./lib/search";
 import { LanguageProvider, useLanguage } from "./components/LanguageProvider";
+import { ThemeProvider } from "./components/ThemeProvider";
 import type { DocumentDetail, DocumentVersion } from "./lib/documents";
 type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "users" | "settings";
 type Template = {
@@ -58,14 +59,14 @@ const initialTemplates: Template[] = [
     { id: 2, title: "Еңбек шартына қосымша келісім", desc: "Кадрлық өзгерістерді тіркеуге арналған келісім.", access: "Жалпы · Public", body: `ЕҢБЕК ШАРТЫНА ҚОСЫМША КЕЛІСІМ № [нөмірі]\n\n1.1. Осы келісім [күні] жасалған еңбек шартына өзгеріс енгізеді.\n1.2. Қызметкер [лауазымы] қызметіне ауыстырылады.\n2.1. Жалақы мөлшері [сома] теңге болып белгіленеді.\n2.2. Қалған шарттар өзгеріссіз қалады.` },
     { id: 3, title: "Бөлімше ережесі және функциялар матрицасы", desc: "Қайта құрылымдау кезіндегі ішкі департамент регламенті.", access: "Корпоративтік · Employee", body: `[БӨЛІМШЕ АТАУЫ] ТУРАЛЫ ЕРЕЖЕ\n\n1.1. Бөлімше ұйымның құрылымдық бөлімшесі болып табылады.\n1.2. Бөлімше өз қызметінде заңнаманы және ішкі регламентті басшылыққа алады.\n2.1. Құжаттарды автоматты талдауды қамтамасыз ету.\n2.2. Нормативтік құжаттар редакцияларындағы қақтығыстарды анықтау.\n3.1. Құжаттарды архивтеу және сақтау.` },
 ];
-export default function Home() { return <LanguageProvider><Workspace /></LanguageProvider>; }
+export default function Home() { return <LanguageProvider><ThemeProvider><Workspace /></ThemeProvider></LanguageProvider>; }
 function Workspace() {
     const { tr, locale } = useLanguage();
     const [templateQuery, setTemplateQuery] = useState("");
     const [tab, setTab] = useState<Tab>("compare");
     const [a, setA] = useState(sampleA), [b, setB] = useState(sampleB), [report, setReport] = useState<Report | null>(null);
     const [templates, setTemplates] = useState(initialTemplates), [editorText, setEditorText] = useState(""), [editorTitle, setEditorTitle] = useState(tr("Құжат.txt"));
-    const [settings, setSettings] = useState<UserSettings>({ autosaveDraft: true, editorFontSize: 14 });
+    const [settings, setSettings] = useState<UserSettings>({ autosaveDraft: true, editorFontSize: 14, editorWordWrap: true, editorSpellcheck: false });
     const [documentId, setDocumentId] = useState<string | null>(null), [editorVersion, setEditorVersion] = useState(0), [editorBusy, setEditorBusy] = useState(false);
     const [openTemplate, setOpenTemplate] = useState<Template | null>(null), [notice, setNotice] = useState(""), [history, setHistory] = useState<HistoryRow[]>([]), [ready, setReady] = useState(false);
     const [sessionUser, setSessionUser] = useState<SessionUser | null>(null), [authMode, setAuthMode] = useState<"login" | "register" | null>(null);
@@ -102,8 +103,10 @@ function Workspace() {
         queueMicrotask(() => {
             try {
                 const storedSettings = localStorage.getItem("kt-agent-settings");
-                if (storedSettings)
-                    setSettings({ autosaveDraft: true, editorFontSize: 14, ...JSON.parse(storedSettings) });
+                if (storedSettings) {
+                    const saved = JSON.parse(storedSettings);
+                    setSettings({ autosaveDraft: true, editorFontSize: 14, editorWordWrap: true, editorSpellcheck: false, ...saved });
+                }
                 const raw = localStorage.getItem("kt-agent-state");
                 if (raw) {
                     const d = JSON.parse(raw);
