@@ -4,14 +4,12 @@ import Image from "next/image";
 import { roleKey } from "../lib/i18n";
 import { useLanguage } from "./LanguageProvider";
 import { card } from "./styles";
-import { useTheme } from "./ThemeProvider";
 import LanguageSelect from "./LanguageSelect";
 import type { WorkspaceProps } from "./workspace-context";
 export default function SettingsPage({ props }: {
     props: WorkspaceProps;
 }) {
     const { tr } = useLanguage();
-    const { theme, setTheme } = useTheme();
     const { sessionUser, settings, setSettings, setSessionUser, setNotice } = props;
     const update = (values: Partial<typeof settings>) => setSettings((current) => ({ ...current, ...values }));
     const [profileName, setProfileName] = useState(sessionUser?.name || "");
@@ -58,8 +56,7 @@ export default function SettingsPage({ props }: {
       </dl>
     </section>}
     <section className={card + " space-y-5"}>
-      <div><h2 className="font-semibold">{tr("Көрініс және тіл")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Интерфейс көрінісі мен тілін таңдаңыз.")}</p></div>
-      <label className="block max-w-md space-y-2"><span className="block text-sm font-medium">{tr("Тақырып")}</span><select value={theme} onChange={(event) => setTheme(event.target.value === "dark" ? "dark" : "light")} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"><option value="light">{tr("Жарық")}</option><option value="dark">{tr("Қараңғы")}</option></select></label>
+      <div><h2 className="font-semibold">{tr("Тіл")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Интерфейс тілін таңдаңыз.")}</p></div>
       <LanguageSelect />
     </section>
     <section className={card + " space-y-5"}>

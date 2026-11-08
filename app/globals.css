@@ -25,6 +25,7 @@ html.dark {
 }
 
 html.dark body { background: var(--background); color: var(--foreground); }
+html.dark [class~="bg-[#f3f7fd]"] { background-color: #0b1220 !important; }
 html.dark [class~="bg-white"], html.dark [class~="bg-white/95"], html.dark [class~="bg-white/70"] { background-color: #111c2e !important; }
 html.dark [class~="bg-slate-50"], html.dark [class~="bg-slate-50/70"] { background-color: #172338 !important; }
 html.dark [class~="bg-slate-100"] { background-color: #1e293b !important; }
