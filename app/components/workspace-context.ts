@@ -1,7 +1,8 @@
 import type { DocumentDetail, DocumentVersion } from "../lib/documents";
 import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 
-export type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "companies" | "users";
+export type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "company" | "users";
+export type CompanyWorkspace = { id: string; name: string; role: "admin" | "member" };
 export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
 export type Change = { type: string; title: string; description: string; a: string; b: string };
 export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[] };
@@ -14,6 +15,10 @@ export type WorkspaceProps = {
   nav: [Tab, string][];
   tab: Tab;
   setTab: Dispatch<SetStateAction<Tab>>;
+  workspaces: CompanyWorkspace[];
+  setWorkspaces: Dispatch<SetStateAction<CompanyWorkspace[]>>;
+  activeWorkspaceId: string | null;
+  setActiveWorkspaceId: Dispatch<SetStateAction<string | null>>;
   setOpenTemplate: Dispatch<SetStateAction<Template | null>>;
   sessionUser: SessionUser | null;
   setSessionUser: Dispatch<SetStateAction<SessionUser | null>>;

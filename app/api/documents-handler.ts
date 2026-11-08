@@ -10,10 +10,12 @@ const fail = (error: string, status = 400) => json({ error }, status);
 
 export async function handleDocumentRequest(request: Request, path: string[]) {
   const store = await readStore();
-  return handleDocuments(request, path, store, await currentUser(request, store));
+  const url = new URL(request.url);
+  const workspaceScope = url.searchParams.has("workspaceId") ? url.searchParams.get("workspaceId") || null : undefined;
+  return handleDocuments(request, path, store, await currentUser(request, store), workspaceScope);
 }
 
-export async function handleDocuments(request: Request, path: string[], store: Store, user: User | null) {
+export async function handleDocuments(request: Request, path: string[], store: Store, user: User | null, workspaceScope?: string | null) {
   if (!user) return fail("Жүйеге кіріңіз", 401);
   const method = request.method;
   const permission = (document: SavedDocument): "owner" | "editor" | "commenter" | "viewer" | "none" => {
@@ -24,7 +26,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
     return document.shares?.find(item => item.email === user.email)?.permission || "none";
   };
   const canEdit = (document: SavedDocument) => ["owner", "editor"].includes(permission(document));
-  const owned = store.documents.filter(document => permission(document) !== "none");
+  const owned = store.documents.filter(document => permission(document) !== "none" && (workspaceScope === undefined || (workspaceScope === null ? !document.workspaceId : document.workspaceId === workspaceScope)));
 
   if (path.length === 2 && path[1] === "comments" && method === "GET") {
     const document = owned.find(item => item.id === path[0]);

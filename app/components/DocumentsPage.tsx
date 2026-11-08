@@ -8,8 +8,9 @@ import type { WorkspaceProps } from "./workspace-context";
 const field = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 const secondary = `${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`;
 const extension = (title: string) => title.includes(".") ? title.split(".").pop()!.toUpperCase().slice(0, 8) : "TXT";
-export default function DocumentsPage({ props }: {
+export default function DocumentsPage({ props, workspaceScope }: {
     props: WorkspaceProps;
+    workspaceScope?: string | null;
 }) {
     const { tr, locale } = useLanguage();
     const date = (value: string) => value ? new Intl.DateTimeFormat(locale, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : tr("Күні белгісіз");
@@ -33,7 +34,7 @@ export default function DocumentsPage({ props }: {
         if (!sessionUser)
             return;
         const controller = new AbortController();
-        fetch("/api/documents", { signal: controller.signal })
+        fetch(`/api/documents?workspaceId=${encodeURIComponent(workspaceScope || "")}`, { signal: controller.signal })
             .then(async (response) => {
             const data = await response.json();
             if (!response.ok)
@@ -50,16 +51,16 @@ export default function DocumentsPage({ props }: {
                 setLoading(false);
         });
         return () => controller.abort();
-    }, [sessionUser, reload, tr]);
+    }, [sessionUser, reload, tr, workspaceScope]);
     useEffect(() => {
-        if (!sessionUser) return;
+        if (!sessionUser || workspaceScope !== undefined) return;
         const controller = new AbortController();
         fetch("/api/workspaces", { cache: "no-store", signal: controller.signal }).then(async response => {
             const data = await response.json();
             if (response.ok) setWorkspaces(data);
         }).catch(() => {});
         return () => controller.abort();
-    }, [sessionUser]);
+    }, [sessionUser, workspaceScope]);
     if (!sessionUser)
         return <section className={`${card} py-14 text-center`}>
     <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl" aria-hidden="true">▤</div>
@@ -85,7 +86,8 @@ export default function DocumentsPage({ props }: {
             if (file.size > 2 * 1024 * 1024)
                 throw new Error(tr("Файл көлемі 2 МБ-тан аспауы керек."));
             const text = await readDocumentFile(file);
-            const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: file.name, text, source: "upload", workspaceId: targetWorkspace || undefined }) });
+            const selectedWorkspace = workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined;
+            const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: file.name, text, source: "upload", workspaceId: selectedWorkspace }) });
             const document = await response.json();
             if (!response.ok)
                 throw new Error(document.error);
@@ -150,13 +152,12 @@ export default function DocumentsPage({ props }: {
     <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-blue-600">{tr("Жұмыс кеңістігі / Кітапхана")}</p><h1 className="text-3xl font-bold">{tr("Құжаттар")}</h1><p className="mt-2 text-sm text-slate-500">{tr("Барлық сақталған файлдар мен нұсқалар бір жерде")}</p></div>
       <div className="flex flex-wrap gap-2">
-        <label className="sr-only" htmlFor="document-workspace">{tr("Сақтау кеңістігі")}</label>
-        <select id="document-workspace" value={targetWorkspace} onChange={event => setTargetWorkspace(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">{tr("Жеке кеңістік")}</option>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select>
+        {workspaceScope === undefined && <><label className="sr-only" htmlFor="document-workspace">{tr("Сақтау кеңістігі")}</label><select id="document-workspace" value={targetWorkspace} onChange={event => setTargetWorkspace(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">{tr("Жеке кеңістік")}</option>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></>}
         <label className={`${secondary} relative ${uploading ? "opacity-50" : "cursor-pointer"}`}>
           {uploading ? tr("Жүктелуде…") : tr("\u2191 Файл жүктеу")}
           <input aria-label={tr("Құжат жүктеу")} className="absolute inset-0 w-full cursor-pointer opacity-0" type="file" accept=".txt,.md,.csv,.tsv,.json,.xml,.html,.log" disabled={uploading} onChange={upload}/>
         </label>
-        <button onClick={() => newDocument(targetWorkspace || undefined)} className={`${button} gap-2 bg-blue-600 text-white hover:bg-blue-700`}><span aria-hidden="true">＋</span>{tr("Жаңа құжат")}</button>
+        <button onClick={() => newDocument(workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined)} className={`${button} gap-2 bg-blue-600 text-white hover:bg-blue-700`}><span aria-hidden="true">＋</span>{tr("Жаңа құжат")}</button>
       </div>
     </div>
 
@@ -180,7 +181,7 @@ export default function DocumentsPage({ props }: {
           <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-slate-50 text-3xl text-slate-400" aria-hidden="true">▤</div>
           <h2 className="text-lg font-semibold">{hasFilters ? tr("Құжаттар табылмады") : tr("Алғашқы құжатыңызды қосыңыз")}</h2>
           <p className="mx-auto mb-5 mt-2 max-w-sm text-sm text-slate-500">{hasFilters ? tr("Іздеу сөзін өзгертіңіз немесе сүзгілерді тазалаңыз.") : tr("Редакторда құжат жасаңыз немесе мәтіндік файл жүктеңіз. Барлық нұсқалар осында сақталады.")}</p>
-          <button onClick={hasFilters ? resetFilters : () => newDocument(targetWorkspace || undefined)} className={`${button} bg-blue-50 text-blue-700`}>{hasFilters ? tr("Сүзгілерді тазалау") : tr("\uFF0B Құжат жасау")}</button>
+          <button onClick={hasFilters ? resetFilters : () => newDocument(workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined)} className={`${button} bg-blue-50 text-blue-700`}>{hasFilters ? tr("Сүзгілерді тазалау") : tr("\uFF0B Құжат жасау")}</button>
         </div> : <>
           <div className="hidden grid-cols-[minmax(0,1fr)_120px_160px_160px] gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-medium text-slate-500 lg:grid"><span>{tr("Құжат атауы")}</span><span>{tr("Нұсқа")}</span><span>{tr("Жаңартылған күні")}</span><span className="text-right">{tr("Әрекеттер")}</span></div>
           <ul className="divide-y divide-slate-100">{filtered.map(document => <li key={document.id} className={`grid items-center gap-3 px-5 py-4 transition hover:bg-slate-50/70 lg:grid-cols-[minmax(0,1fr)_120px_160px_160px] ${selected?.id === document.id ? "bg-blue-50/60" : ""}`}>
