@@ -1,5 +1,6 @@
 "use client";
-
+import { analysisDescription, analysisReference, analysisSummary, roleKey } from "../lib/i18n";
+import { useLanguage } from "./LanguageProvider";
 import { button, card } from "./styles";
 import type { WorkspaceProps } from "./workspace-context";
 import { readDocumentFile } from "../lib/read-document";

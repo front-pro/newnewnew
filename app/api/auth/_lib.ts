@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SavedDocument } from "../../lib/documents";
 
-export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin" };
+export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; avatar?: string };
 export type Template = { id: number; title: string; desc: string; access: "public" | "employee"; owner: string; body: string };
 type LegacyDocument = { id: string; title: string; text: string; updatedAt: string; version: number };
 export type Store = {
@@ -73,7 +73,7 @@ export async function writeStore(store: Store) {
     throw error;
   }
 }
-export const publicUser = ({ id, name, email, role }: User) => ({ id, name, email, role });
+export const publicUser = ({ id, name, email, role, avatar }: User) => ({ id, name, email, role, avatar: avatar || null });
 export const hashPassword = (password: string, salt: string) => scryptSync(password, salt, 64).toString("hex");
 export function safeHashEqual(left: string, right: string) { const a = Buffer.from(left, "hex"), b = Buffer.from(right, "hex"); return a.length === b.length && timingSafeEqual(a, b); }
 export const newToken = () => randomBytes(32).toString("hex");

@@ -5,8 +5,9 @@ export type Tab = "compare" | "documents" | "templates" | "editor" | "history" |
 export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
 export type Change = { type: string; title: string; description: string; a: string; b: string };
 export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[] };
-export type SessionUser = { id: string; name: string; email: string; role: string };
+export type SessionUser = { id: string; name: string; email: string; role: string; avatar?: string | null };
 export type UserRow = { name: string; email: string; role: string };
+export type HistoryRow = { title: string; type: string; meta: string };
 export type UserSettings = { autosaveDraft: boolean; editorFontSize: number };
 export type AuthMode = "login" | "register" | null;
 
@@ -16,6 +17,7 @@ export type WorkspaceProps = {
   setTab: Dispatch<SetStateAction<Tab>>;
   setOpenTemplate: Dispatch<SetStateAction<Template | null>>;
   sessionUser: SessionUser | null;
+  setSessionUser: Dispatch<SetStateAction<SessionUser | null>>;
   logout: () => Promise<void>;
   setAuthMode: Dispatch<SetStateAction<AuthMode>>;
   a: string; setA: Dispatch<SetStateAction<string>>;
@@ -35,7 +37,10 @@ export type WorkspaceProps = {
   setSettings: Dispatch<SetStateAction<UserSettings>>;
   openTemplate: Template | null;
   notice: string; setNotice: Dispatch<SetStateAction<string>>;
-  history: string[];
+  history: HistoryRow[];
+  templateQuery: string;
+  setTemplateQuery: Dispatch<SetStateAction<string>>;
+  filteredTemplateCount: number;
   users: UserRow[];
   templateTitle: string; setTemplateTitle: Dispatch<SetStateAction<string>>;
   templateDesc: string; setTemplateDesc: Dispatch<SetStateAction<string>>;
