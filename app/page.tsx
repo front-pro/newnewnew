@@ -11,7 +11,7 @@ import { matchesSearch } from "./lib/search";
 import { LanguageProvider, useLanguage } from "./components/LanguageProvider";
 import { ThemeProvider } from "./components/ThemeProvider";
 import type { DocumentDetail, DocumentVersion } from "./lib/documents";
-type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "users" | "settings";
+type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "companies" | "users" | "settings";
 type Template = {
     id: number;
     title: string;
@@ -68,6 +68,7 @@ function Workspace() {
     const [templates, setTemplates] = useState(initialTemplates), [editorText, setEditorText] = useState(""), [editorTitle, setEditorTitle] = useState(tr("Құжат.txt"));
     const [settings, setSettings] = useState<UserSettings>({ autosaveDraft: true, editorFontSize: 14, editorWordWrap: true, editorSpellcheck: false });
     const [documentId, setDocumentId] = useState<string | null>(null), [editorVersion, setEditorVersion] = useState(0), [editorBusy, setEditorBusy] = useState(false);
+    const [editorWorkspaceId, setEditorWorkspaceId] = useState<string | null>(null);
     const [openTemplate, setOpenTemplate] = useState<Template | null>(null), [notice, setNotice] = useState(""), [history, setHistory] = useState<HistoryRow[]>([]), [ready, setReady] = useState(false);
     const [sessionUser, setSessionUser] = useState<SessionUser | null>(null), [authMode, setAuthMode] = useState<"login" | "register" | null>(null);
     const [authName, setAuthName] = useState(""), [authEmail, setAuthEmail] = useState(""), [authPassword, setAuthPassword] = useState(""), [authBusy, setAuthBusy] = useState(false);
@@ -137,7 +138,7 @@ function Workspace() {
     const nav: [
         Tab,
         string
-    ][] = [["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ["users", tr("Пайдаланушылар")], ["settings", tr("Баптаулар")]];
+    ][] = [["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ["companies", tr("Компаниялар")], ["users", tr("Пайдаланушылар")], ["settings", tr("Баптаулар")]];
     const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file)
@@ -172,8 +173,8 @@ function Workspace() {
             setNotice(error instanceof Error ? tr(error.message) : tr("Талдау орындалмады"));
         }
     };
-    const newDocument = () => { setDocumentId(null); setEditorVersion(0); setEditorText(""); setEditorTitle(tr("Жаңа құжат.txt")); setTab("editor"); };
-    const openDocument = (document: DocumentDetail, snapshot?: DocumentVersion) => { const latest = document.versions[document.versions.length - 1]; const selected = snapshot || latest; setDocumentId(document.id); setEditorVersion(latest.version); setEditorTitle(selected.title); setEditorText(selected.text); setTab("editor"); setNotice(snapshot && snapshot.version !== latest.version ? tr("v{p0} редакторда ашылды. Сақтау жаңа нұсқа жасайды.", { p0: snapshot.version }) : tr("«{p0}» редакторда ашылды.", { p0: document.title })); };
+    const newDocument = (workspaceId?: string) => { setDocumentId(null); setEditorVersion(0); setEditorWorkspaceId(workspaceId || null); setEditorText(""); setEditorTitle(tr("Жаңа құжат.txt")); setTab("editor"); };
+    const openDocument = (document: DocumentDetail, snapshot?: DocumentVersion) => { const latest = document.versions[document.versions.length - 1]; const selected = snapshot || latest; setDocumentId(document.id); setEditorVersion(latest.version); setEditorWorkspaceId(document.workspaceId || null); setEditorTitle(selected.title); setEditorText(selected.text); setTab("editor"); setNotice(snapshot && snapshot.version !== latest.version ? tr("v{p0} редакторда ашылды. Сақтау жаңа нұсқа жасайды.", { p0: snapshot.version }) : tr("«{p0}» редакторда ашылды.", { p0: document.title })); };
     const onDocumentDeleted = (id: string) => {
         if (documentId === id) {
             setDocumentId(null);
@@ -191,6 +192,7 @@ function Workspace() {
         }
         await fetch(`/api/templates/${t.id}/use`, { method: "POST" });
         setDocumentId(null);
+        setEditorWorkspaceId(null);
         setEditorVersion(0);
         setEditorText(t.body);
         setEditorTitle(`${t.title}.txt`);
@@ -207,7 +209,7 @@ function Workspace() {
         }
         setEditorBusy(true);
         try {
-            const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: editorText, title: editorTitle, documentId, baseVersion: editorVersion }) });
+            const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: editorText, title: editorTitle, documentId, baseVersion: editorVersion, workspaceId: editorWorkspaceId || undefined }) });
             const data = await response.json();
             if (!response.ok)
                 throw new Error(data.error);

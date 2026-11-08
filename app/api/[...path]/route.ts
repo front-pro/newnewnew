@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentUser, readStore, stamp, withStoreLock, writeStore } from "../auth/_lib";
 import type { Template, User } from "../auth/_lib";
 import { handleDocumentRequest } from "../documents-handler";
+import { handleWorkspaceRequest } from "../workspaces-handler";
 
 type Clause = { n: string; text: string };
 const clauses = (value: string): Clause[] => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const match = line.match(/^(\d+(?:\.\d+)*)\.?\s+(.*)$/); return { n: match?.[1] || "", text: match?.[2] || line }; });
@@ -28,6 +29,7 @@ async function handle(request: Request) {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent), method = request.method;
     if (path[0] === "documents") return await handleDocumentRequest(request, path.slice(1));
+    if (path[0] === "workspaces") return await withStoreLock(() => handleWorkspaceRequest(request, path.slice(1)));
     const store = await readStore(), user = await currentUser(request, store), role = user?.role || "guest";
     if (path[0] === "analysis" && path[1] === "run" && method === "POST") {
       const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");

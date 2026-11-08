@@ -3,11 +3,15 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SavedDocument } from "../../lib/documents";
 
-export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; avatar?: string };
+export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; platformRole?: "operator"; avatar?: string };
+export type WorkspaceRole = "member" | "admin";
+export type Workspace = { id: string; name: string; ownerId: string; createdAt: string };
+export type WorkspaceMembership = { workspaceId: string; userId: string; role: WorkspaceRole; joinedAt: string };
+export type WorkspaceInvitation = { id: string; workspaceId: string; email: string; role: WorkspaceRole; tokenHash: string; expiresAt: string; invitedBy: string };
 export type Template = { id: number; title: string; desc: string; access: "public" | "employee"; owner: string; body: string };
 type LegacyDocument = { id: string; title: string; text: string; updatedAt: string; version: number };
 export type Store = {
-  users: User[]; sessions: Record<string, string>; templates: Template[]; analyses: Record<string, { owner: string; result: Record<string, unknown> }>;
+  users: User[]; sessions: Record<string, string>; workspaces: Workspace[]; memberships: WorkspaceMembership[]; invitations: WorkspaceInvitation[]; templates: Template[]; analyses: Record<string, { owner: string; result: Record<string, unknown> }>;
   docs: Record<string, string>; versions: Record<string, number>; documents: SavedDocument[]; log: { owner: string; type: string; tone: string; title: string; meta: string }[]; nextId: number;
 };
 const pathToStore = path.join(process.env.KT_AGENT_DATA_DIR || path.join(process.cwd(), ".data"), "agent.json");
@@ -24,6 +28,11 @@ const makeUser = (name: string, email: string, password: string, role: User["rol
   const salt = randomBytes(16).toString("hex");
   return { id: randomBytes(12).toString("hex"), name, email, salt, hash: scryptSync(password, salt, 64).toString("hex"), role };
 };
+function assignPlatformOperators(users: User[]) {
+  const operators = new Set((process.env.KT_PLATFORM_OPERATOR_EMAILS || "").split(",").map(email => email.trim().toLowerCase()).filter(Boolean));
+  users.forEach(user => { user.platformRole = operators.has(user.email) ? "operator" : undefined; });
+  return users;
+}
 const templates: Template[] = [
   { id: 1, title: "Қызметтік жазба үлгісі", desc: "Ішкі хат алмасуға арналған стандартты формат.", access: "public", owner: "system", body: `ҚЫЗМЕТТІК ЖАЗБА\n\nКімге: [лауазымы, аты-жөні]\nКімнен: [лауазымы, аты-жөні]\nКүні: [күн.ай.жыл]\n\n1. Мәселенің мәні: [қысқаша сипаттаңыз]\n2. Ұсыныс: [не істеу керек]\n3. Қосымшалар: [құжаттар тізімі]` },
   { id: 2, title: "Еңбек шартына қосымша келісім", desc: "Кадрлық өзгерістерді тіркеуге арналған келісім.", access: "public", owner: "system", body: `ЕҢБЕК ШАРТЫНА ҚОСЫМША КЕЛІСІМ № [нөмірі]\n\n1.1. Осы келісім [күні] жасалған еңбек шартына өзгеріс енгізеді.\n1.2. Қызметкер [лауазымы] қызметіне ауыстырылады.\n2.1. Жалақы мөлшері [сома] теңге болып белгіленеді.\n2.2. Қалған шарттар өзгеріссіз қалады.` },
@@ -36,7 +45,8 @@ function initialStore(): Store {
   if (process.env.KT_BOOTSTRAP_ADMIN_EMAIL && process.env.KT_BOOTSTRAP_ADMIN_PASSWORD) {
     users.push(makeUser("Әкімші", process.env.KT_BOOTSTRAP_ADMIN_EMAIL.trim().toLowerCase(), process.env.KT_BOOTSTRAP_ADMIN_PASSWORD, "admin"));
   }
-  return { users, sessions: {}, templates, analyses: {}, docs: {}, versions: {}, documents: [], log: [], nextId: 1 };
+  assignPlatformOperators(users);
+  return { users, sessions: {}, workspaces: [], memberships: [], invitations: [], templates, analyses: {}, docs: {}, versions: {}, documents: [], log: [], nextId: 1 };
 }
 export async function readStore(): Promise<Store> {
   try {
@@ -55,7 +65,7 @@ export async function readStore(): Promise<Store> {
         documents.push({ id: `legacy-${Buffer.from(owner).toString("hex")}`, owner, title: "Құжат.txt", source: "editor", createdAt: "", updatedAt: "", versions: [{ version: raw.versions?.[owner] || 1, title: "Құжат.txt", text, savedAt: "" }] });
       }
     }
-    return { ...defaults, ...raw, documents, users: Array.isArray(raw.users) ? raw.users : defaults.users, templates: Array.isArray(raw.templates) ? raw.templates : defaults.templates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: Array.isArray(raw.log) ? raw.log : [], sessions: raw.sessions || {}, nextId: Number.isSafeInteger(raw.nextId) && raw.nextId! > 0 ? raw.nextId! : 1 };
+    return { ...defaults, ...raw, documents: documents.map(document => ({ ...document, shares: document.shares || [], comments: document.comments || [] })), users: assignPlatformOperators(Array.isArray(raw.users) ? raw.users : defaults.users), workspaces: Array.isArray(raw.workspaces) ? raw.workspaces : [], memberships: Array.isArray(raw.memberships) ? raw.memberships : [], invitations: Array.isArray(raw.invitations) ? raw.invitations : [], templates: Array.isArray(raw.templates) ? raw.templates : defaults.templates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: Array.isArray(raw.log) ? raw.log : [], sessions: raw.sessions || {}, nextId: Number.isSafeInteger(raw.nextId) && raw.nextId! > 0 ? raw.nextId! : 1 };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return initialStore();
     throw error;
@@ -73,7 +83,7 @@ export async function writeStore(store: Store) {
     throw error;
   }
 }
-export const publicUser = ({ id, name, email, role, avatar }: User) => ({ id, name, email, role, avatar: avatar || null });
+export const publicUser = ({ id, name, email, role, platformRole, avatar }: User) => ({ id, name, email, role, platformRole: platformRole || null, avatar: avatar || null });
 export const hashPassword = (password: string, salt: string) => scryptSync(password, salt, 64).toString("hex");
 export function safeHashEqual(left: string, right: string) { const a = Buffer.from(left, "hex"), b = Buffer.from(right, "hex"); return a.length === b.length && timingSafeEqual(a, b); }
 export const newToken = () => randomBytes(32).toString("hex");
