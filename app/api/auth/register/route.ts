@@ -13,17 +13,22 @@ async function post(request: Request) {
     if (!/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: "Email форматы дұрыс емес" }, { status: 400 });
     if (email.length > 254) return NextResponse.json({ error: "Email тым ұзын" }, { status: 400 });
     if (password.length < 8 || password.length > 1024) return NextResponse.json({ error: "Құпиясөз 8–1024 таңба болуы керек" }, { status: 400 });
-    const store = await readStore();
-    if (store.users.some(user => user.email === email)) return NextResponse.json({ error: "Бұл email тіркелген" }, { status: 409 });
-    const salt = randomBytes(16).toString("hex");
-    const user = { id: randomBytes(12).toString("hex"), name, email, salt, hash: hashPassword(password, salt), role: "user" as const };
-    const token = newToken();
-    store.users.push(user);
-    store.sessions[token] = user.id;
-    await writeStore(store);
+    const result = await withStoreLock(async () => {
+      const store = await readStore();
+      if (store.users.some(user => user.email === email)) return { conflict: true as const };
+      const salt = randomBytes(16).toString("hex");
+      const user = { id: randomBytes(12).toString("hex"), name, email, salt, hash: hashPassword(password, salt), role: "user" as const };
+      const token = newToken();
+      store.users.push(user);
+      store.sessions[token] = user.id;
+      await writeStore(store);
+      return { user, token };
+    });
+    if ("conflict" in result) return NextResponse.json({ error: "Бұл email тіркелген" }, { status: 409 });
+    const { user, token } = result;
     const response = NextResponse.json({ user: publicUser(user) }, { status: 201 });
     response.headers.set("Set-Cookie", cookieHeader(token));
     return response;
   } catch (error) { return NextResponse.json({ error: error instanceof SyntaxError ? "JSON сұрауының форматы қате" : "Тіркелу кезінде қате шықты" }, { status: error instanceof SyntaxError ? 400 : 500 }); }
 }
-export const POST = (request: Request) => withStoreLock(() => post(request));
+export const POST = (request: Request) => post(request);
