@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { randomBytes, scryptSync } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,10 +12,10 @@ import path from "node:path";
 let server, directory, base, cookie, otherCookie, document;
 let output = "";
 
-async function api(route, { method = "GET", body, session = cookie } = {}) {
+async function api(route, { method = "GET", body, session = cookie, headers: extraHeaders = {} } = {}) {
   const response = await fetch(`${base}/api/${route}`, {
     method,
-    headers: { ...(session ? { Cookie: session } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
+    headers: { ...(session ? { Cookie: session } : {}), ...(body ? { "Content-Type": "application/json" } : {}), ...extraHeaders },
     body: body ? JSON.stringify(body) : undefined,
   });
   return { response, data: await response.json() };
@@ -21,14 +23,15 @@ async function api(route, { method = "GET", body, session = cookie } = {}) {
 
 before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "kt-documents-test-"));
-  await writeFile(path.join(directory, "agent.json"), JSON.stringify({ docs: { "user@kt.kz": "Бұрын сақталған құжат" }, versions: { "user@kt.kz": 4 }, documents: { "employee@kt.kz": [{ id: "old-file", title: "Бұрынғы тізім.txt", text: "Қолданыстағы құжат", updatedAt: "2026-11-06 10:00", version: 3 }] } }));
+  const user = (id, email, password) => { const salt = randomBytes(16).toString("hex"); return { id, name: email, email, salt, hash: scryptSync(password, salt, 64).toString("hex"), role: "user" }; };
+  await writeFile(path.join(directory, "agent.json"), JSON.stringify({ users: [user("legacy-user", "user@kt.kz", "User12345"), user("legacy-employee", "employee@kt.kz", "Employee123")], docs: { "user@kt.kz": "Бұрын сақталған құжат" }, versions: { "user@kt.kz": 4 }, documents: { "employee@kt.kz": [{ id: "old-file", title: "Бұрынғы тізім.txt", text: "Қолданыстағы құжат", updatedAt: "2026-11-06 10:00", version: 3 }] } }));
   const socket = createServer();
   socket.listen(0, "127.0.0.1");
   await once(socket, "listening");
   const port = socket.address().port;
   await new Promise(resolve => socket.close(resolve));
   base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], { env: { ...process.env, KT_AGENT_DATA_DIR: directory }, stdio: ["ignore", "pipe", "pipe"] });
+  server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], { env: { ...process.env, KT_AGENT_DATA_DIR: directory, KT_EMAIL_DEV_TOKENS: "1" }, stdio: ["ignore", "pipe", "pipe"] });
   server.stdout.on("data", chunk => { output += chunk; });
   server.stderr.on("data", chunk => { output += chunk; });
   let ready = false;
@@ -83,7 +86,9 @@ test("multiple documents and immutable version snapshots persist", async () => {
   const listing = await api("documents");
   assert.equal(listing.data.length, 3);
   assert.ok(listing.data.every(row => !row.owner && !row.versions));
-  const stored = JSON.parse(await readFile(path.join(directory, "agent.json"), "utf8"));
+  const database = new DatabaseSync(path.join(directory, "agent.sqlite"));
+  const stored = JSON.parse(database.prepare("SELECT payload FROM app_state WHERE id = 1").get().payload);
+  database.close();
   assert.equal(stored.documents.find(row => row.id === document.id).versions.length, 2);
 });
 
@@ -106,6 +111,20 @@ test("another account cannot read or update a document", async () => {
   assert.equal((await api(`documents/${document.id}`, { session: otherCookie, method: "DELETE" })).response.status, 404);
 });
 
+test("document owner can grant and revoke commenting without edit access", async () => {
+  const shared = await api(`documents/${document.id}/shares`, { method: "POST", body: { email: "employee@kt.kz", permission: "commenter" } });
+  assert.equal(shared.response.status, 201);
+  const visible = await api(`documents/${document.id}`, { session: otherCookie });
+  assert.equal(visible.response.status, 200);
+  assert.equal(visible.data.permission, "commenter");
+  const comment = await api(`documents/${document.id}/comments`, { method: "POST", session: otherCookie, body: { text: "Please review this clause." } });
+  assert.equal(comment.response.status, 201);
+  assert.equal((await api("documents", { method: "POST", session: otherCookie, body: { documentId: document.id, baseVersion: 2, text: "unauthorized change" } })).response.status, 404);
+  assert.equal((await api(`documents/${document.id}/comments`)).data[0].text, "Please review this clause.");
+  assert.equal((await api(`documents/${document.id}/shares/${encodeURIComponent("employee@kt.kz")}`, { method: "DELETE" })).response.status, 200);
+  assert.equal((await api(`documents/${document.id}`, { session: otherCookie })).response.status, 404);
+});
+
 test("validation rejects empty text, oversized text, and invalid names", async () => {
   for (const body of [{ text: " " }, { text: "test", title: " " }, { text: "test", title: "x".repeat(201) }, { text: {} }]) {
     assert.equal((await api("documents", { method: "POST", body })).response.status, 400);
@@ -122,7 +141,7 @@ test("simultaneous saves reject a stale version and preserve history", async () 
 });
 
 test("restoring an older snapshot creates a new version", async () => {
-  const restored = await api("documents", { method: "POST", body: { documentId: document.id, baseVersion: 3, title: "Ереже.txt", text: "Алғашқы нұсқа" } });
+  const restored = await api(`documents/${document.id}/restore`, { method: "POST", body: { version: 1, baseVersion: 3 } });
   assert.equal(restored.data.version, 4);
   assert.equal(restored.data.versions.length, 4);
   assert.equal(restored.data.versions[1].text, "Екінші нұсқа");
@@ -130,6 +149,26 @@ test("restoring an older snapshot creates a new version", async () => {
   assert.equal(latest.data.id, document.id);
   assert.equal(latest.data.text, "Алғашқы нұсқа");
   assert.equal(latest.data.version, 4);
+});
+
+test("approval is bound to an immutable version and rejects stale decisions", async () => {
+  const requested = await api(`documents/${document.id}/approval`, { method: "POST", body: { approvers: ["employee@kt.kz"] } });
+  assert.equal(requested.response.status, 201);
+  assert.equal(requested.data.version, 4);
+  const inbox = await api("approvals", { session: otherCookie });
+  assert.equal(inbox.response.status, 200);
+  assert.equal(inbox.data[0].document.text, "Алғашқы нұсқа");
+  const changed = await api("documents", { method: "POST", body: { documentId: document.id, baseVersion: 4, title: "Ереже.txt", text: "Бесінші нұсқа" } });
+  assert.equal(changed.data.version, 5);
+  assert.equal((await api(`approvals/${requested.data.id}/decision`, { method: "POST", session: otherCookie, body: { decision: "approve" } })).response.status, 409);
+
+  const fresh = await api(`documents/${document.id}/approval`, { method: "POST", body: { approvers: ["employee@kt.kz"] } });
+  assert.equal(fresh.response.status, 201);
+  const approved = await api(`approvals/${fresh.data.id}/decision`, { method: "POST", session: otherCookie, body: { decision: "approve" } });
+  assert.equal(approved.response.status, 200);
+  assert.equal(approved.data.status, "approved");
+  assert.equal((await api(`documents/${document.id}`)).data.approval.status, "approved");
+  assert.equal((await api(`approvals/${fresh.data.id}/decision`, { method: "POST", session: otherCookie, body: { decision: "approve" } })).response.status, 409);
 });
 
 test("deleting a document removes its snapshots and preserves other accounts", async () => {
@@ -146,4 +185,103 @@ test("deleting the final document does not resurrect legacy text", async () => {
   assert.deepEqual((await api("documents")).data, []);
   assert.equal((await api("documents/me")).data.text, "");
   assert.deepEqual((await api("documents")).data, []);
+});
+
+test("registration creates a session and logout revokes it", async () => {
+  const registered = await api("auth/register", { method: "POST", session: "", body: { name: "New user", email: "new-user@example.test", password: "SecurePass123" } });
+  assert.equal(registered.response.status, 201);
+  assert.equal(registered.data.user.emailVerified, false);
+  assert.equal((await api("auth/login", { method: "POST", session: "", body: { email: "new-user@example.test", password: "SecurePass123" } })).response.status, 403);
+  const resent = await api("auth/verify/resend", { method: "POST", session: "", body: { email: "new-user@example.test" } });
+  assert.equal(resent.response.status, 202);
+  assert.equal((await api("auth/verify", { method: "POST", session: "", body: { email: "new-user@example.test", token: registered.data.verificationToken } })).response.status, 400);
+  const verified = await api("auth/verify", { method: "POST", session: "", body: { email: "new-user@example.test", token: resent.data.verificationToken } });
+  assert.equal(verified.response.status, 200);
+  const newCookie = verified.response.headers.get("set-cookie").split(";")[0];
+  assert.equal((await api("auth/me", { session: newCookie })).data.user.email, "new-user@example.test");
+  const secondLogin = await api("auth/login", { method: "POST", session: "", body: { email: "new-user@example.test", password: "SecurePass123" } });
+  const secondCookie = secondLogin.response.headers.get("set-cookie").split(";")[0];
+  const sessionList = await api("auth/sessions", { session: newCookie });
+  assert.equal(sessionList.response.status, 200);
+  assert.equal(sessionList.data.sessions.length, 2);
+  assert.ok(sessionList.data.sessions.some(session => session.current));
+  assert.equal((await api("auth/sessions", { method: "POST", session: newCookie })).data.revoked, 1);
+  assert.equal((await api("auth/me", { session: secondCookie })).data.user, null);
+  const loggedOut = await api("auth/logout", { method: "POST", session: newCookie });
+  assert.equal(loggedOut.response.status, 200);
+  assert.equal((await api("auth/me", { session: newCookie })).data.user, null);
+  assert.equal((await api("documents", { session: newCookie })).response.status, 401);
+  const activeSession = await api("auth/login", { method: "POST", session: "", body: { email: "new-user@example.test", password: "SecurePass123" } });
+  const oldSessionCookie = activeSession.response.headers.get("set-cookie").split(";")[0];
+  const reset = await api("auth/password-reset", { method: "POST", session: "", body: { email: "new-user@example.test" } });
+  assert.equal(reset.response.status, 202);
+  const changed = await api("auth/password-reset/confirm", { method: "POST", session: "", body: { email: "new-user@example.test", token: reset.data.resetToken, password: "BrandNewPass123" } });
+  assert.equal(changed.response.status, 200);
+  assert.equal((await api("auth/me", { session: oldSessionCookie })).data.user, null);
+  assert.equal((await api("auth/login", { method: "POST", session: "", body: { email: "new-user@example.test", password: "SecurePass123" } })).response.status, 401);
+  assert.equal((await api("auth/login", { method: "POST", session: "", body: { email: "new-user@example.test", password: "BrandNewPass123" } })).response.status, 200);
+});
+
+test("login attempts are rate limited by account and client address", async () => {
+  let response;
+  for (let attempt = 0; attempt < 10; attempt++) response = (await api("auth/login", { method: "POST", session: "", headers: { "x-real-ip": "203.0.113.2" }, body: { email: "blocked@example.test", password: "not-the-password" } })).response;
+  assert.equal(response.status, 401);
+  const blocked = await api("auth/login", { method: "POST", session: "", headers: { "x-real-ip": "203.0.113.2" }, body: { email: "blocked@example.test", password: "not-the-password" } });
+  assert.equal(blocked.response.status, 429);
+  assert.ok(Number(blocked.response.headers.get("retry-after")) > 0);
+});
+
+test("company membership, document isolation, and admin audit are enforced", async () => {
+  const created = await api("workspaces", { method: "POST", body: { name: "Demo Company" } });
+  assert.equal(created.response.status, 201);
+  const workspaceId = created.data.id;
+  const invite = await api(`workspaces/${workspaceId}/invitations`, { method: "POST", body: { email: "employee@kt.kz", role: "member" } });
+  assert.equal(invite.response.status, 201);
+  const accepted = await api("workspaces/invitations/accept", { method: "POST", session: otherCookie, body: { token: invite.data.token } });
+  assert.equal(accepted.response.status, 200);
+  const pendingInvite = await api(`workspaces/${workspaceId}/invitations`, { method: "POST", body: { email: "revoked@kt.kz", role: "member" } });
+  assert.equal(pendingInvite.response.status, 201);
+  assert.equal((await api(`workspaces/${workspaceId}/invitations`)).data.some(item => item.email === "revoked@kt.kz"), true);
+  assert.equal((await api(`workspaces/${workspaceId}/invitations`, { session: otherCookie })).response.status, 403);
+  assert.equal((await api(`workspaces/${workspaceId}/invitations/${pendingInvite.data.id}`, { method: "DELETE" })).response.status, 200);
+  assert.equal((await api("workspaces/invitations/accept", { session: otherCookie, method: "POST", body: { token: pendingInvite.data.token } })).response.status, 404);
+  const createdGroup = await api(`workspaces/${workspaceId}/groups`, { method: "POST", body: { name: "Заң бөлімі", description: "Шарттарды тексеру" } });
+  assert.equal(createdGroup.response.status, 201);
+  assert.equal((await api(`workspaces/${workspaceId}/groups`, { session: otherCookie, method: "POST", body: { name: "Denied" } })).response.status, 403);
+  const employeeId = (await api(`workspaces/${workspaceId}/members`)).data.find(row => row.email === "employee@kt.kz").id;
+  const groupMember = await api(`workspaces/${workspaceId}/groups/${createdGroup.data.id}/members`, { method: "POST", body: { userId: employeeId } });
+  assert.equal(groupMember.response.status, 200);
+  assert.equal(groupMember.data.members[0], employeeId);
+  assert.equal((await api(`workspaces/${workspaceId}/groups`)).data[0].members[0].email, "employee@kt.kz");
+  assert.equal((await api(`workspaces/${workspaceId}/groups/${createdGroup.data.id}`, { method: "PATCH", body: { name: "Келісім бөлімі", description: "Келісу және бақылау" } })).data.name, "Келісім бөлімі");
+  const companyDoc = await api("documents?workspaceId=" + workspaceId, { method: "POST", body: { title: "Company doc", text: "Private company content", workspaceId } });
+  assert.equal(companyDoc.response.status, 201);
+  assert.equal((await api(`documents/${companyDoc.data.id}`, { session: otherCookie })).response.status, 404);
+  const groupAccess = await api(`documents/${companyDoc.data.id}/group-shares`, { method: "POST", body: { groupId: createdGroup.data.id, permission: "commenter" } });
+  assert.equal(groupAccess.response.status, 201);
+  const groupVisible = await api(`documents/${companyDoc.data.id}`, { session: otherCookie });
+  assert.equal(groupVisible.response.status, 200);
+  assert.equal(groupVisible.data.permission, "commenter");
+  assert.equal((await api(`documents/${companyDoc.data.id}/comments`, { method: "POST", session: otherCookie, body: { text: "Group review" } })).response.status, 201);
+  assert.equal((await api(`documents/${companyDoc.data.id}/group-shares/${createdGroup.data.id}`, { method: "DELETE" })).response.status, 200);
+  assert.equal((await api(`documents/${companyDoc.data.id}`, { session: otherCookie })).response.status, 404);
+  const memberAudit = await api(`workspaces/${workspaceId}/audit`, { session: otherCookie });
+  assert.equal(memberAudit.response.status, 403);
+  const audit = await api(`workspaces/${workspaceId}/audit`);
+  assert.equal(audit.response.status, 200);
+  assert.ok(audit.data.some(row => row.action === "workspace.create"));
+  assert.ok(audit.data.some(row => row.action === "membership.invite"));
+  assert.ok(audit.data.some(row => row.action === "membership.accept_invitation"));
+  const approval = await api(`documents/${companyDoc.data.id}/approval`, { method: "POST", body: { approvers: ["employee@kt.kz"] } });
+  assert.equal(approval.response.status, 201);
+  assert.equal((await api("approvals", { session: otherCookie })).data.some(flow => flow.id === approval.data.id), true);
+  const database = new DatabaseSync(path.join(directory, "agent.sqlite"));
+  const employee = JSON.parse(database.prepare("SELECT payload FROM app_state WHERE id = 1").get().payload).users.find(row => row.email === "employee@kt.kz");
+  database.close();
+  const removed = await api(`workspaces/${workspaceId}/members/${employee.id}`, { method: "DELETE" });
+  assert.equal(removed.response.status, 200);
+  assert.equal((await api("approvals", { session: otherCookie })).data.some(flow => flow.id === approval.data.id), false);
+  assert.equal((await api(`approvals/${approval.data.id}/decision`, { method: "POST", session: otherCookie, body: { decision: "approve" } })).response.status, 403);
+  assert.deepEqual((await api(`workspaces/${workspaceId}/groups`)).data[0].members, []);
+  assert.equal((await api(`documents/${companyDoc.data.id}`, { session: otherCookie })).response.status, 404);
 });

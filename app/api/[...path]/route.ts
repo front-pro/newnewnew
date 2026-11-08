@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { currentUser, readStore, stamp, withStoreLock, writeStore } from "../auth/_lib";
+import { currentUser, readStore, stamp, withStoreLock, withStoreReadLock, writeStore } from "../auth/_lib";
 import type { Template, User } from "../auth/_lib";
-import { handleDocumentRequest } from "../documents-handler";
+import { handleApprovalRequest, handleDocumentRequest } from "../documents-handler";
 import { handleWorkspaceRequest } from "../workspaces-handler";
 
 type Clause = { n: string; text: string };
@@ -29,7 +29,8 @@ async function handle(request: Request) {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent), method = request.method;
     if (path[0] === "documents") return await handleDocumentRequest(request, path.slice(1));
-    if (path[0] === "workspaces") return await withStoreLock(() => handleWorkspaceRequest(request, path.slice(1)));
+    if (path[0] === "approvals") return await handleApprovalRequest(request, path.slice(1));
+    if (path[0] === "workspaces") return await handleWorkspaceRequest(request, path.slice(1));
     const store = await readStore(), user = await currentUser(request, store), role = user?.role || "guest";
     if (path[0] === "analysis" && path[1] === "run" && method === "POST") {
       const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
@@ -95,7 +96,7 @@ async function handle(request: Request) {
     return fail("API маршрут табылмады", 404);
   } catch (error) { return apiError(error); }
 }
-const lockedHandle = (request: Request) => withStoreLock(() => handle(request));
+const lockedHandle = (request: Request) => request.method === "GET" ? withStoreReadLock(() => handle(request)) : withStoreLock(() => handle(request));
 export const GET = lockedHandle;
 export const POST = lockedHandle;
 export const PATCH = lockedHandle;

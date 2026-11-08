@@ -9,7 +9,9 @@ export type SavedDocument = {
   id: string;
   owner: string;
   workspaceId?: string;
+  approvalId?: string;
   shares?: { email: string; permission: "viewer" | "commenter" | "editor" }[];
+  groupShares?: { groupId: string; permission: "viewer" | "commenter" | "editor" }[];
   comments?: { id: string; author: string; text: string; createdAt: string }[];
   title: string;
   source: "editor" | "upload";

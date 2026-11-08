@@ -1,7 +1,7 @@
 import type { DocumentDetail, DocumentVersion } from "../lib/documents";
 import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 
-export type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "company" | "users";
+export type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
 export type CompanyWorkspace = { id: string; name: string; role: "admin" | "member" };
 export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
 export type Change = { type: string; title: string; description: string; a: string; b: string };
@@ -9,7 +9,7 @@ export type Report = { id: number; isSaved?: boolean; summary: string; metrics: 
 export type SessionUser = { id: string; name: string; email: string; role: string; platformRole?: "operator" | null; avatar?: string | null };
 export type UserRow = { name: string; email: string; role: string };
 export type HistoryRow = { title: string; type: string; meta: string };
-export type AuthMode = "login" | "register" | null;
+export type AuthMode = "login" | "register" | "verify" | "reset" | "reset-confirm" | null;
 
 export type WorkspaceProps = {
   nav: [Tab, string][];
@@ -62,6 +62,8 @@ export type WorkspaceProps = {
   authName: string; setAuthName: Dispatch<SetStateAction<string>>;
   authEmail: string; setAuthEmail: Dispatch<SetStateAction<string>>;
   authPassword: string; setAuthPassword: Dispatch<SetStateAction<string>>;
+  authToken: string; setAuthToken: Dispatch<SetStateAction<string>>;
   authBusy: boolean;
+  resendVerification: () => Promise<void>;
   cards: ReactNode;
 };

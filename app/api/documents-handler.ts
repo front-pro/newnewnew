@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { summarizeDocument } from "../lib/documents";
 import type { SavedDocument } from "../lib/documents";
-import { currentUser, readStore, stamp, writeStore } from "./auth/_lib";
-import type { Store, User } from "./auth/_lib";
+import { appendAuditEvent, currentUser, readStore, stamp, writeStore } from "./auth/_lib";
+import type { ApprovalFlow, Store, User } from "./auth/_lib";
 
 const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "private, no-store" } });
 const fail = (error: string, status = 400) => json({ error }, status);
@@ -19,18 +19,74 @@ export async function handleDocuments(request: Request, path: string[], store: S
   if (!user) return fail("Жүйеге кіріңіз", 401);
   const method = request.method;
   const permission = (document: SavedDocument): "owner" | "editor" | "commenter" | "viewer" | "none" => {
-    if (document.owner === user.email) return "owner";
-    if (document.workspaceId && store.memberships.some(item => item.workspaceId === document.workspaceId && item.userId === user.id)) {
-      return document.shares?.find(item => item.email === user.email)?.permission || "none";
+    if (document.workspaceId) {
+      const isMember = store.memberships.some(item => item.workspaceId === document.workspaceId && item.userId === user.id);
+      if (!isMember) return "none";
+      if (document.owner === user.email) return "owner";
+      const direct = document.shares?.find(item => item.email === user.email)?.permission;
+      const inGroups = store.groups.filter(group => group.workspaceId === document.workspaceId && group.members.includes(user.id)).map(group => document.groupShares?.find(share => share.groupId === group.id)?.permission).filter((value): value is "viewer" | "commenter" | "editor" => !!value);
+      return [direct, ...inGroups].sort((a, b) => ({ none: 0, viewer: 1, commenter: 2, editor: 3 }[b || "none"] - { none: 0, viewer: 1, commenter: 2, editor: 3 }[a || "none"]))[0] || "none";
     }
+    if (document.owner === user.email) return "owner";
     return document.shares?.find(item => item.email === user.email)?.permission || "none";
   };
   const canEdit = (document: SavedDocument) => ["owner", "editor"].includes(permission(document));
   const owned = store.documents.filter(document => permission(document) !== "none" && (workspaceScope === undefined || (workspaceScope === null ? !document.workspaceId : document.workspaceId === workspaceScope)));
 
+  if (path.length === 2 && path[1] === "approval" && method === "POST") {
+    const document = owned.find(item => item.id === path[0] && canEdit(item));
+    if (!document) return fail("Құжат табылмады", 404);
+    if (document.approvalId && store.approvals.some(flow => flow.id === document.approvalId && flow.status === "pending")) return fail("Құжатта аяқталмаған бекіту сұрауы бар", 409);
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    const emails: string[] = Array.isArray(body?.approvers) ? [...new Set((body.approvers as unknown[]).filter((email): email is string => typeof email === "string").map(email => email.trim().toLowerCase()))] : [];
+    if (!emails.length || emails.length > 10 || emails.some(email => !/^\S+@\S+\.\S+$/.test(email))) return fail("1–10 жарамды бекітушінің email-ын енгізіңіз");
+    const approvers = emails.map(email => store.users.find(candidate => candidate.email === email));
+    if (approvers.some(approver => !approver || approver.id === user.id)) return fail("Бекітуші тіркелген пайдаланушы болуы және өзіңіз болмауы керек", 400);
+    if (document.workspaceId && approvers.some(approver => !store.memberships.some(member => member.workspaceId === document.workspaceId && member.userId === approver!.id))) return fail("Компания құжатын тек сол компания мүшесіне бекітуге жіберуге болады", 403);
+    approvers.forEach(approver => {
+      if (approver!.email !== document.owner) {
+        const existingShare = document.shares?.find(share => share.email === approver!.email);
+        if (!existingShare) document.shares = [...(document.shares || []), { email: approver!.email, permission: "commenter" }];
+      }
+    });
+    const flow: ApprovalFlow = { id: randomUUID(), documentId: document.id, workspaceId: document.workspaceId, requestedBy: user.id, requestedAt: new Date().toISOString(), version: document.versions.at(-1)!.version, status: "pending", steps: approvers.map(approver => ({ approverId: approver!.id, email: approver!.email, decision: "pending" })) };
+    store.approvals.push(flow); document.approvalId = flow.id;
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "approval.request", resourceType: "approval", resourceId: flow.id, metadata: { documentId: document.id, version: flow.version, approvers: flow.steps.length } });
+    return json(flow, 201);
+  }
+
+  if (path.length === 2 && path[1] === "restore" && method === "POST") {
+    const document = owned.find(item => item.id === path[0] && canEdit(item));
+    if (!document) return fail("Құжат табылмады", 404);
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    const versionNumber = Number(body?.version), latest = document.versions[document.versions.length - 1];
+    if (!Number.isSafeInteger(versionNumber) || versionNumber < 1) return fail("Қалпына келтіретін нұсқаның нөмірі қате");
+    if (body?.baseVersion !== latest.version) return fail("Құжаттың жаңа нұсқасы бар. Құжатты қайта ашып қайталаңыз.", 409);
+    const snapshot = document.versions.find(item => item.version === versionNumber);
+    if (!snapshot) return fail("Нұсқа табылмады", 404);
+    const restored = { version: latest.version + 1, title: snapshot.title, text: snapshot.text, savedAt: new Date().toISOString() };
+    document.versions.push(restored); document.title = restored.title; document.updatedAt = restored.savedAt;
+    if (document.approvalId) {
+      const approval = store.approvals.find(flow => flow.id === document.approvalId && flow.status === "pending");
+      if (approval) approval.status = "stale";
+      if (approval) await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "approval.stale", resourceType: "approval", resourceId: approval.id, metadata: { documentId: document.id, reason: "document_restored" } });
+      delete document.approvalId;
+    }
+    store.docs[document.owner] = restored.text; store.versions[document.owner] = restored.version;
+    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, meta: `${stamp()} · v${restored.version} · v${versionNumber} нұсқасынан қалпына келтірілді` });
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.restore_version", resourceType: "document", resourceId: document.id, metadata: { restoredFrom: versionNumber, version: restored.version } });
+    const approval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId) : undefined;
+    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
+  }
+
   if (path.length === 2 && path[1] === "comments" && method === "GET") {
     const document = owned.find(item => item.id === path[0]);
     if (!document) return fail("Құжат табылмады", 404);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.read_comments", resourceType: "document", resourceId: document.id });
     return json(document.comments || []);
   }
   if (path.length === 2 && path[1] === "comments" && method === "POST") {
@@ -43,12 +99,14 @@ export async function handleDocuments(request: Request, path: string[], store: S
     const comment = { id: randomUUID(), author: user.email, text, createdAt: new Date().toISOString() };
     document.comments = [...(document.comments || []), comment];
     await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.comment", resourceType: "document", resourceId: document.id, metadata: { commentId: comment.id } });
     return json(comment, 201);
   }
 
   if (path.length === 2 && path[1] === "shares" && method === "GET") {
     const document = store.documents.find(item => item.id === path[0] && permission(item) === "owner");
     if (!document) return fail("Құжат табылмады", 404);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.read_shares", resourceType: "document", resourceId: document.id });
     return json(document.shares || []);
   }
   if (path.length === 2 && path[1] === "shares" && method === "POST") {
@@ -63,7 +121,39 @@ export async function handleDocuments(request: Request, path: string[], store: S
     document.shares = (document.shares || []).filter(item => item.email !== email);
     document.shares.push({ email, permission: access });
     await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.share", resourceType: "document", resourceId: document.id, metadata: { email, permission: access } });
     return json(document.shares, 201);
+  }
+  if (path.length === 2 && path[1] === "group-shares" && method === "GET") {
+    const document = store.documents.find(item => item.id === path[0] && permission(item) === "owner");
+    if (!document || !document.workspaceId) return fail("Компания құжаты немесе иесінің рұқсаты табылмады", 404);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.read_group_shares", resourceType: "document", resourceId: document.id });
+    return json((document.groupShares || []).flatMap(share => {
+      const group = store.groups.find(item => item.id === share.groupId && item.workspaceId === document.workspaceId);
+      return group ? [{ groupId: group.id, name: group.name, permission: share.permission }] : [];
+    }));
+  }
+  if (path.length === 2 && path[1] === "group-shares" && method === "POST") {
+    const document = store.documents.find(item => item.id === path[0] && permission(item) === "owner");
+    if (!document || !document.workspaceId) return fail("Компания құжаты немесе иесінің рұқсаты табылмады", 404);
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    const groupId = typeof body?.groupId === "string" ? body.groupId : "", access = body?.permission;
+    const group = store.groups.find(item => item.id === groupId && item.workspaceId === document.workspaceId);
+    if (!group || !["viewer", "commenter", "editor"].includes(access)) return fail("Топ немесе құжат рұқсаты қате", 400);
+    document.groupShares = [...(document.groupShares || []).filter(item => item.groupId !== group.id), { groupId, permission: access }];
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.group_share", resourceType: "document", resourceId: document.id, metadata: { groupId, permission: access } });
+    return json((document.groupShares || []).map(share => ({ ...share, name: store.groups.find(item => item.id === share.groupId)?.name })), 201);
+  }
+  if (path.length === 3 && path[1] === "group-shares" && method === "DELETE") {
+    const document = store.documents.find(item => item.id === path[0] && permission(item) === "owner");
+    if (!document || !document.workspaceId) return fail("Компания құжаты немесе иесінің рұқсаты табылмады", 404);
+    const groupId = path[2];
+    document.groupShares = (document.groupShares || []).filter(item => item.groupId !== groupId);
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.group_unshare", resourceType: "document", resourceId: document.id, metadata: { groupId } });
+    return json({ ok: true });
   }
   if (path.length === 3 && path[1] === "shares" && method === "DELETE") {
     const document = store.documents.find(item => item.id === path[0] && permission(item) === "owner");
@@ -71,6 +161,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
     const email = decodeURIComponent(path[2]).toLowerCase();
     document.shares = (document.shares || []).filter(item => item.email !== email);
     await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.unshare", resourceType: "document", resourceId: document.id, metadata: { email } });
     return json({ ok: true });
   }
 
@@ -84,7 +175,9 @@ export async function handleDocuments(request: Request, path: string[], store: S
   if (path.length === 1 && method === "GET") {
     const document = owned.find(item => item.id === path[0]);
     if (!document) return fail("Құжат табылмады", 404);
-    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions });
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.read", resourceType: "document", resourceId: document.id, metadata: { version: document.versions[document.versions.length - 1].version } });
+    const approval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId) : undefined;
+    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
   }
   if (path.length === 1 && path[0] !== "me" && method === "DELETE") {
     const document = owned.find(item => item.id === path[0] && permission(item) === "owner");
@@ -98,6 +191,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
     } else { delete store.docs[user.email]; delete store.versions[user.email]; }
     store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, meta: `${stamp()} · жойылды` });
     await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.delete", resourceType: "document", resourceId: document.id, metadata: { title: document.title } });
     return json({ ok: true });
   }
   if (!path.length && method === "POST") {
@@ -131,13 +225,69 @@ export async function handleDocuments(request: Request, path: string[], store: S
     document.title = title;
     document.updatedAt = now;
     document.versions.push({ version, title, text, savedAt: now });
+    if (existing?.approvalId) {
+      const approval = store.approvals.find(flow => flow.id === existing.approvalId && flow.status === "pending");
+      if (approval) {
+        approval.status = "stale";
+        await appendAuditEvent({ workspaceId: existing.workspaceId, actorId: user.id, action: "approval.stale", resourceType: "approval", resourceId: approval.id, metadata: { documentId: existing.id, reason: "document_updated" } });
+      }
+      delete existing.approvalId;
+    }
     if (!existing) store.documents.push(document);
     // Retain compatibility with the previous editor endpoint.
     store.docs[user.email] = text;
     store.versions[user.email] = version;
     store.log.push({ owner: user.email, type: "Құжат", tone: "green", title, meta: `${stamp()} · v${version}` });
     await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: existing ? "document.update" : "document.create", resourceType: "document", resourceId: document.id, metadata: { version } });
     return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions }, existing ? 200 : 201);
+  }
+  return fail("API маршрут табылмады", 404);
+}
+
+export async function handleApprovalRequest(request: Request, path: string[]) {
+  const store = await readStore(), user = await currentUser(request, store);
+  if (!user) return fail("Жүйеге кіріңіз", 401);
+  if (!path.length && request.method === "GET") {
+    const assigned = store.approvals.filter(flow => flow.steps.some(step => step.approverId === user.id));
+    return json(assigned.map(flow => {
+      const document = store.documents.find(item => item.id === flow.documentId);
+      const step = flow.steps.find(item => item.approverId === user.id);
+      const version = document?.versions.find(item => item.version === flow.version);
+      const inWorkspace = !flow.workspaceId || store.memberships.some(item => item.workspaceId === flow.workspaceId && item.userId === user.id);
+      return document && version && step && inWorkspace ? { ...flow, step, document: { id: document.id, title: version.title, workspaceId: document.workspaceId, text: version.text } } : null;
+    }).filter(Boolean));
+  }
+  if (path.length === 2 && path[1] === "decision" && request.method === "POST") {
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    if (body?.decision !== "approve" && body?.decision !== "reject") return fail("Шешім approve немесе reject болуы керек");
+    const flow = store.approvals.find(item => item.id === path[0]);
+    if (!flow) return fail("Бекіту сұрауы табылмады", 404);
+    if (flow.status !== "pending") return fail(flow.status === "stale" ? "Құжат нұсқасы өзгерген. Жаңа нұсқаны қайта бекітуге жіберіңіз." : "Бұл бекіту аяқталған", 409);
+    const step = flow.steps.find(item => item.approverId === user.id && item.decision === "pending");
+    if (!step) return fail("Бұл бекітуді шешуге рұқсатыңыз жоқ", 403);
+    const document = store.documents.find(item => item.id === flow.documentId);
+    if (!document) return fail("Құжат табылмады", 404);
+    if (flow.workspaceId && !store.memberships.some(item => item.workspaceId === flow.workspaceId && item.userId === user.id)) return fail("Компания мүшелігі жоқ", 403);
+    const currentVersion = document.versions.at(-1)?.version;
+    if (currentVersion !== flow.version) {
+      flow.status = "stale";
+      if (document.approvalId === flow.id) delete document.approvalId;
+      await writeStore(store);
+      await appendAuditEvent({ workspaceId: flow.workspaceId, actorId: user.id, action: "approval.stale", resourceType: "approval", resourceId: flow.id });
+      return fail("Құжат нұсқасы өзгерген. Жаңа нұсқаны қайта бекітуге жіберіңіз.", 409);
+    }
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (reason.length > 2000) return fail("Себеп 2 000 таңбадан аспауы керек");
+    step.decision = body.decision === "approve" ? "approved" : "rejected";
+    step.decidedAt = new Date().toISOString();
+    if (reason) step.reason = reason;
+    if (step.decision === "rejected") flow.status = "rejected";
+    else if (flow.steps.every(item => item.decision === "approved")) flow.status = "approved";
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: flow.workspaceId, actorId: user.id, action: `approval.${step.decision}`, resourceType: "approval", resourceId: flow.id, metadata: { documentId: document.id, version: flow.version } });
+    return json(flow);
   }
   return fail("API маршрут табылмады", 404);
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useLanguage } from "./LanguageProvider";
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import type { DocumentDetail, DocumentSummary } from "../lib/documents";
 import { readDocumentFile } from "../lib/read-document";
 import { button, card } from "./styles";
@@ -8,6 +8,9 @@ import type { WorkspaceProps } from "./workspace-context";
 const field = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 const secondary = `${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`;
 const extension = (title: string) => title.includes(".") ? title.split(".").pop()!.toUpperCase().slice(0, 8) : "TXT";
+type Comment = { id: string; author: string; text: string; createdAt: string };
+type ApprovalView = { id: string; version: number; status: string; steps: { email: string; decision: string; reason?: string }[] };
+type SharedDocument = DocumentDetail & { permission?: "owner" | "editor" | "commenter" | "viewer"; shares?: { email: string; permission: "viewer" | "commenter" | "editor" }[]; groupShares?: { groupId: string; name: string; permission: "viewer" | "commenter" | "editor" }[]; approvalId?: string; approval?: ApprovalView };
 export default function DocumentsPage({ props, workspaceScope }: {
     props: WorkspaceProps;
     workspaceScope?: string | null;
@@ -28,8 +31,37 @@ export default function DocumentsPage({ props, workspaceScope }: {
     const [sort, setSort] = useState("recent");
     const [uploading, setUploading] = useState(false);
     const [openingId, setOpeningId] = useState<string | null>(null);
-    const [selected, setSelected] = useState<DocumentDetail | null>(null);
+    const [selected, setSelected] = useState<SharedDocument | null>(null);
     const [snapshotNumber, setSnapshotNumber] = useState<number | null>(null);
+    const [comments, setComments] = useState<Comment[]>([]), [commentText, setCommentText] = useState("");
+    const [shareEmail, setShareEmail] = useState(""), [sharePermission, setSharePermission] = useState<"viewer" | "commenter" | "editor">("viewer");
+    const [shareGroupId, setShareGroupId] = useState(""), [shareGroupPermission, setShareGroupPermission] = useState<"viewer" | "commenter" | "editor">("viewer"), [companyGroups, setCompanyGroups] = useState<{ id: string; name: string }[]>([]), [groupsWorkspaceId, setGroupsWorkspaceId] = useState("");
+    const [approverEmails, setApproverEmails] = useState("");
+    const selectedId = selected?.id, selectedPermission = selected?.permission;
+    const availableCompanyGroups = groupsWorkspaceId === selected?.workspaceId ? companyGroups : [];
+    useEffect(() => {
+        if (!selectedId) return;
+        let cancelled = false;
+        fetch(`/api/documents/${encodeURIComponent(selectedId)}/comments`, { cache: "no-store" }).then(async response => {
+            const data = await response.json();
+            if (response.ok && !cancelled) setComments(data);
+        }).catch(() => {});
+        if (selectedPermission === "owner") fetch(`/api/documents/${encodeURIComponent(selectedId)}/shares`, { cache: "no-store" }).then(async response => {
+            const data = await response.json();
+            if (response.ok && !cancelled) setSelected(current => current?.id === selectedId ? { ...current, shares: data } : current);
+        }).catch(() => {});
+        if (selectedPermission === "owner" && selected?.workspaceId) {
+            fetch(`/api/documents/${encodeURIComponent(selectedId)}/group-shares`, { cache: "no-store" }).then(async response => {
+                const data = await response.json();
+                if (response.ok && !cancelled) setSelected(current => current?.id === selectedId ? { ...current, groupShares: data } : current);
+            }).catch(() => {});
+            fetch(`/api/workspaces/${encodeURIComponent(selected.workspaceId)}/groups`, { cache: "no-store" }).then(async response => {
+                const data = await response.json();
+                if (response.ok && !cancelled) { setCompanyGroups(data); setGroupsWorkspaceId(selected.workspaceId!); }
+            }).catch(() => {});
+        }
+        return () => { cancelled = true; };
+    }, [selectedId, selectedPermission, selected?.workspaceId]);
     useEffect(() => {
         if (!sessionUser)
             return;
@@ -108,7 +140,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
         setOpeningId(document.id);
         try {
             const response = await fetch(`/api/documents/${encodeURIComponent(document.id)}`);
-            const detail: DocumentDetail & {
+            const detail: SharedDocument & {
                 error?: string;
             } = await response.json();
             if (!response.ok)
@@ -116,6 +148,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
             if (edit)
                 openDocument(detail);
             else {
+                setComments([]);
                 setSelected(detail);
                 setSnapshotNumber(detail.version);
             }
@@ -147,6 +180,76 @@ export default function DocumentsPage({ props, workspaceScope }: {
         finally {
             setOpeningId(null);
         }
+    }
+    async function addComment() {
+        if (!selected || !commentText.trim()) return;
+        try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: commentText }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+            setComments(current => [...current, data]); setCommentText("");
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Пікірді сақтау мүмкін болмады.")); }
+    }
+    async function shareDocument(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        if (!selected) return;
+        try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: shareEmail, permission: sharePermission }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+            setSelected(current => current?.id === selected.id ? { ...current, shares: data } : current); setShareEmail("");
+            setNotice(tr("Құжатқа қолжетімділік берілді."));
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Құжатты бөлісу мүмкін болмады.")); }
+    }
+    async function revokeShare(email: string) {
+        if (!selected) return;
+        try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/shares/${encodeURIComponent(email)}`, { method: "DELETE" });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+            setSelected(current => current?.id === selected.id ? { ...current, shares: current.shares?.filter(item => item.email !== email) } : current);
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Қолжетімділікті алып тастау мүмкін болмады.")); }
+    }
+    async function shareWithGroup(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault(); if (!selected || !shareGroupId) return;
+        try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/group-shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ groupId: shareGroupId, permission: shareGroupPermission }) });
+            const data = await response.json(); if (!response.ok) throw new Error(data.error);
+            setSelected(current => current?.id === selected.id ? { ...current, groupShares: data } : current);
+            setNotice(tr("Құжатқа топтық қолжетімділік берілді."));
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Топпен бөлісу мүмкін болмады.")); }
+    }
+    async function revokeGroupShare(groupId: string) {
+        if (!selected) return;
+        try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/group-shares/${encodeURIComponent(groupId)}`, { method: "DELETE" });
+            const data = await response.json(); if (!response.ok) throw new Error(data.error);
+            setSelected(current => current?.id === selected.id ? { ...current, groupShares: current.groupShares?.filter(item => item.groupId !== groupId) } : current);
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Топқа қолжетімділікті алып тастау мүмкін болмады.")); }
+    }
+    async function restoreVersion() {
+        if (!selected || !snapshot) return;
+        try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/restore`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: snapshot.version, baseVersion: selected.version }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+            setSelected(data); setSnapshotNumber(data.version);
+            setDocuments(current => current.map(item => item.id === data.id ? data : item));
+            setNotice(tr("Ескі нұсқа жаңа нұсқа ретінде қалпына келтірілді."));
+            await onDocumentsSaved();
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Нұсқаны қалпына келтіру мүмкін болмады.")); }
+    }
+    async function requestApproval(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        if (!selected) return;
+        try {
+            const approvers = approverEmails.split(/[;,\n]/).map(email => email.trim()).filter(Boolean);
+            const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/approval`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approvers }) });
+            const data: ApprovalView & { error?: string } = await response.json();
+            if (!response.ok) throw new Error(data.error);
+            setSelected(current => current?.id === selected.id ? { ...current, approvalId: data.id, approval: data } : current);
+            setApproverEmails(""); setNotice(tr("Бекіту сұрауы жіберілді."));
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Бекіту сұрауын жіберу мүмкін болмады.")); }
     }
     return <>
     <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
@@ -196,10 +299,14 @@ export default function DocumentsPage({ props, workspaceScope }: {
       {selected && <aside className={`${card} min-w-0 space-y-5`} aria-label={tr("Құжат нұсқалары")}>
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-1 text-xs font-semibold uppercase tracking-wider text-blue-600">{tr("Нұсқалар тарихы")}</p><h2 className="break-words font-bold">{selected.title}</h2><p className="mt-1 text-xs text-slate-400">{tr("{count} сақталған нұсқа", { count: selected.versionCount })}</p></div><button onClick={() => setSelected(null)} aria-label={tr("Нұсқалар панелін жабу")} className="rounded-lg px-2 py-1 text-xl text-slate-400 hover:bg-slate-100">×</button></div>
         <div className="max-h-60 space-y-2 overflow-y-auto">{[...selected.versions].reverse().map(version => <button key={version.version} onClick={() => setSnapshotNumber(version.version)} aria-pressed={snapshotNumber === version.version} className={`flex w-full items-center justify-between gap-2 rounded-xl border p-3 text-left ${snapshotNumber === version.version ? "border-blue-200 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}><span><span className="font-mono text-sm font-bold text-slate-700">v{version.version}</span><time className="mt-1 block text-xs text-slate-500" dateTime={version.savedAt || undefined}>{date(version.savedAt)}</time></span>{version.version === selected.version && <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">{tr("Соңғы нұсқа")}</span>}</button>)}</div>
+        <section className="space-y-3 border-t border-slate-100 pt-4"><h3 className="font-semibold">{tr("Пікірлер")}</h3><div className="max-h-48 space-y-2 overflow-auto">{comments.map(comment => <article key={comment.id} className="rounded-lg bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-600">{comment.author}</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{comment.text}</p><time className="mt-1 block text-[11px] text-slate-400">{date(comment.createdAt)}</time></article>)}{!comments.length && <p className="text-xs text-slate-400">{tr("Пікір әлі жоқ")}</p>}</div>{["owner", "editor", "commenter"].includes(selected.permission || "") && <div className="space-y-2"><textarea value={commentText} onChange={event => setCommentText(event.target.value)} maxLength={5000} placeholder={tr("Пікір қалдыру...")} className={`${field} min-h-20`}/><button onClick={() => void addComment()} disabled={!commentText.trim()} className={`${button} bg-blue-600 text-white disabled:opacity-50`}>{tr("Пікірді жіберу")}</button></div>}</section>
+        {selected.permission === "owner" && <section className="space-y-3 border-t border-slate-100 pt-4"><h3 className="font-semibold">{tr("Құжатқа қолжетімділік")}</h3><ul className="space-y-2">{(selected.shares || []).map(share => <li key={share.email} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs"><span className="min-w-0 truncate">{share.email} · {tr(share.permission === "viewer" ? "Оқырман" : share.permission === "commenter" ? "Пікір қалдырушы" : "Редактор")}</span><button onClick={() => void revokeShare(share.email)} className="text-rose-600 hover:underline">{tr("Алып тастау")}</button></li>)}</ul><form onSubmit={shareDocument} className="space-y-2"><input required type="email" value={shareEmail} onChange={event => setShareEmail(event.target.value)} placeholder="email@example.com" className={field}/><div className="flex gap-2"><select value={sharePermission} onChange={event => setSharePermission(event.target.value as typeof sharePermission)} className={`${field} min-w-0`}><option value="viewer">{tr("Оқырман")}</option><option value="commenter">{tr("Пікір қалдырушы")}</option><option value="editor">{tr("Редактор")}</option></select><button className={`${button} shrink-0 bg-blue-600 text-white`}>{tr("Бөлісу")}</button></div></form>{selected.workspaceId && <div className="space-y-2 border-t border-slate-200 pt-3"><h4 className="text-sm font-semibold">{tr("Топпен бөлісу")}</h4><ul className="space-y-2">{(selected.groupShares || []).map(share => <li key={share.groupId} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs"><span>{share.name} · {tr(share.permission === "viewer" ? "Оқырман" : share.permission === "commenter" ? "Пікір қалдырушы" : "Редактор")}</span><button onClick={() => void revokeGroupShare(share.groupId)} className="text-rose-600 hover:underline">{tr("Алып тастау")}</button></li>)}</ul>{availableCompanyGroups.length > 0 && <form onSubmit={shareWithGroup} className="flex flex-wrap gap-2"><select required value={shareGroupId} onChange={event => setShareGroupId(event.target.value)} className={`${field} min-w-0 flex-1`}><option value="">{tr("Топты таңдаңыз")}</option>{availableCompanyGroups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select><select value={shareGroupPermission} onChange={event => setShareGroupPermission(event.target.value as typeof shareGroupPermission)} className={`${field} w-auto`}><option value="viewer">{tr("Оқырман")}</option><option value="commenter">{tr("Пікір қалдырушы")}</option><option value="editor">{tr("Редактор")}</option></select><button className={`${button} shrink-0 bg-blue-600 text-white`}>{tr("Топқа рұқсат беру")}</button></form>}</div>}</section>}
         {snapshot && <><div><div className="mb-2 flex items-center justify-between text-xs"><h3 className="font-semibold text-slate-600">{tr("Алдын ала қарау · v")}{snapshot.version}</h3><span className="text-slate-400">{size(new TextEncoder().encode(snapshot.text).length)}</span></div><pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-6 text-slate-600">{snapshot.text}</pre></div>
+          {selected.approval && <section className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><b>{tr("Бекіту күйі")}: {tr(selected.approval.status === "pending" ? "Күтуде" : selected.approval.status === "approved" ? "Бекітілді" : selected.approval.status === "rejected" ? "Қабылданбады" : selected.approval.status === "stale" ? "Ескірген нұсқа" : "Ауыстырылған")}</b><p className="mt-1 text-xs">v{selected.approval.version} · {selected.approval.steps.map(step => `${step.email}: ${step.decision}`).join(" · ")}</p></section>}
+          {["owner", "editor"].includes(selected.permission || "") && <form onSubmit={requestApproval} className="space-y-2 rounded-xl border border-slate-200 p-3"><label className="block text-xs font-semibold">{tr("Бекітушілердің email-ы (үтірмен бөліңіз)")}<input required value={approverEmails} onChange={event => setApproverEmails(event.target.value)} placeholder="reviewer@example.com" className={`${field} mt-1`}/></label><button disabled={selected.approval?.status === "pending"} className={`${button} w-full bg-blue-600 text-white disabled:opacity-50`}>{tr("Осы нұсқаны бекітуге жіберу")}</button></form>}
           <div className="flex flex-wrap gap-2"><button onClick={() => openDocument(selected, snapshot)} className={`${button} grow bg-blue-600 text-white hover:bg-blue-700`}>{tr("Редакторда ашу")}</button><button onClick={() => downloadText(snapshot.text, snapshot.title)} className={secondary}>{tr("\u2193 Жүктеу")}</button></div>
           <button onClick={() => deleteDocument(selected)} disabled={openingId !== null} className={`${button} w-full border border-rose-200 text-rose-600 hover:bg-rose-50`}>{tr("Құжатты жою")}</button>
-          {snapshot.version !== selected.version && <p className="text-xs leading-5 text-slate-500">{tr("Алдыңғы нұсқаны редакторда ашып, сақтасаңыз, жаңа нұсқа жасалады. Тарих сақталады.")}</p>}
+          {snapshot.version !== selected.version && ["owner", "editor"].includes(selected.permission || "") && <button onClick={() => void restoreVersion()} className={`${button} w-full border border-blue-200 bg-blue-50 text-blue-700`}>{tr("Осы нұсқаны қалпына келтіру")}</button>}
         </>}
       </aside>}
     </div>

@@ -11,7 +11,7 @@ import { matchesSearch } from "./lib/search";
 import { LanguageProvider, useLanguage } from "./components/LanguageProvider";
 import { ThemeProvider } from "./components/ThemeProvider";
 import type { DocumentDetail, DocumentVersion } from "./lib/documents";
-type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "company" | "users";
+type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
 type Template = {
     id: number;
     title: string;
@@ -71,8 +71,9 @@ function Workspace() {
     const [documentId, setDocumentId] = useState<string | null>(null), [editorVersion, setEditorVersion] = useState(0), [editorBusy, setEditorBusy] = useState(false);
     const [editorWorkspaceId, setEditorWorkspaceId] = useState<string | null>(null);
     const [openTemplate, setOpenTemplate] = useState<Template | null>(null), [notice, setNotice] = useState(""), [history, setHistory] = useState<HistoryRow[]>([]), [ready, setReady] = useState(false);
-    const [sessionUser, setSessionUser] = useState<SessionUser | null>(null), [authMode, setAuthMode] = useState<"login" | "register" | null>(null);
+    const [sessionUser, setSessionUser] = useState<SessionUser | null>(null), [authMode, setAuthMode] = useState<"login" | "register" | "verify" | "reset" | "reset-confirm" | null>(null);
     const [authName, setAuthName] = useState(""), [authEmail, setAuthEmail] = useState(""), [authPassword, setAuthPassword] = useState(""), [authBusy, setAuthBusy] = useState(false);
+    const [authToken, setAuthToken] = useState("");
     const [users, setUsers] = useState<UserRow[]>([]), [templateTitle, setTemplateTitle] = useState(""), [templateDesc, setTemplateDesc] = useState(""), [templateBody, setTemplateBody] = useState(""), [templateAccess, setTemplateAccess] = useState("public");
     const refreshAccountData = useCallback(async (user: SessionUser) => {
         const [templateResponse, historyResponse, workspaceResponse] = await Promise.all([fetch("/api/templates"), fetch("/api/history"), fetch("/api/workspaces")]);
@@ -133,7 +134,7 @@ function Workspace() {
     const nav: [
         Tab,
         string
-    ][] = activeWorkspaceId ? [["company", tr("Компаниялық жұмыс орны")], ...(tab === "editor" ? [["editor", tr("Құжат редакторы")] as [Tab, string]] : [])] : [["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ["users", tr("Пайдаланушылар")], ...(sessionUser && workspaces.length === 0 ? [["company", tr("Компаниялық жұмыс орны")] as [Tab, string]] : [])];
+    ][] = activeWorkspaceId ? [["company", tr("Компаниялық жұмыс орны")], ...(tab === "editor" ? [["editor", tr("Құжат редакторы")] as [Tab, string]] : [])] : [["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ...(sessionUser ? [["approvals", tr("Бекітулер")] as [Tab, string]] : []), ["users", tr("Пайдаланушылар")], ...(sessionUser && workspaces.length === 0 ? [["company", tr("Компаниялық жұмыс орны")] as [Tab, string]] : [])];
     const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file)
@@ -226,16 +227,35 @@ function Workspace() {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 15000);
         try {
-            const response = await fetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: authName, email: authEmail, password: authPassword }), signal: controller.signal, cache: "no-store" });
+            const endpoint = authMode === "reset" ? "password-reset" : authMode === "reset-confirm" ? "password-reset/confirm" : authMode;
+            const payload = authMode === "register" ? { name: authName, email: authEmail, password: authPassword } : authMode === "verify" ? { email: authEmail, token: authToken } : authMode === "reset-confirm" ? { email: authEmail, token: authToken, password: authPassword } : { email: authEmail, ...(authMode === "login" ? { password: authPassword } : {}) };
+            const response = await fetch(`/api/auth/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal, cache: "no-store" });
             const data = await response.json();
             if (!response.ok)
                 throw new Error(data.error || tr("Қате шықты"));
+            if (authMode === "register") {
+                setAuthMode("verify");
+                setAuthToken(data.verificationToken || "");
+                setAuthPassword("");
+                setNotice(data.verificationToken ? tr("Растау кодын енгізіңіз.") : tr("Email-ға жіберілген растау кодын енгізіңіз."));
+                return;
+            }
+            if (authMode === "reset") {
+                if (data.resetToken) { setAuthToken(data.resetToken); setAuthMode("reset-confirm"); setNotice(tr("Жаңа құпиясөзді енгізіңіз.")); }
+                else { setAuthMode(null); setNotice(data.message || tr("Егер бұл email аккаунтқа тіркелген болса, нұсқаулық жіберілді.")); }
+                return;
+            }
+            if (authMode === "reset-confirm") {
+                setAuthMode("login"); setAuthToken(""); setAuthPassword(""); setNotice(tr("Құпиясөз жаңартылды. Жаңа құпиясөзбен кіріңіз."));
+                return;
+            }
             setSessionUser(data.user);
             setAuthMode(null);
             setAuthName("");
             setAuthEmail("");
             setAuthPassword("");
-            setNotice(authMode === "register" ? tr("Тіркелу сәтті аяқталды.") : tr("Жүйеге сәтті кірдіңіз."));
+            setAuthToken("");
+            setNotice(authMode === "verify" ? tr("Email расталды. Жүйеге сәтті кірдіңіз.") : tr("Жүйеге сәтті кірдіңіз."));
             void Promise.all([refreshAccountData(data.user), restoreAccountDocument()]).catch(() => {
                 setNotice(tr("Аккаунтқа кірдіңіз, бірақ қосымша деректерді жүктеу мүмкін болмады. Бетті жаңартып көріңіз."));
             });
@@ -247,6 +267,17 @@ function Workspace() {
             window.clearTimeout(timeout);
             setAuthBusy(false);
         }
+    };
+    const resendVerification = async () => {
+        setAuthBusy(true);
+        try {
+            const response = await fetch("/api/auth/verify/resend", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authEmail }), cache: "no-store" });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || tr("Қате шықты"));
+            if (data.verificationToken) setAuthToken(data.verificationToken);
+            setNotice(tr("Email-ға жаңа растау коды жіберілді."));
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+        finally { setAuthBusy(false); }
     };
     const logout = async () => {
         let serverLogoutFailed = false;
@@ -323,7 +354,7 @@ function Workspace() {
     const filteredTemplates = templates.filter(t => matchesSearch(templateQuery, [t.title, t.desc, t.locked ? "" : t.body, t.owner], locale));
     const filteredTemplateCount = filteredTemplates.length;
     const cards = filteredTemplates.map(t => <article key={t.id} className={`${card} flex min-h-60 flex-col gap-3 ${t.locked ? "opacity-60" : ""}`}><span className={`w-fit rounded-md border px-2 py-1 font-mono text-[11px] font-semibold ${t.locked ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{t.locked ? tr("Құлыпталған 🔒") : tr(t.access === "public" || t.access === "Жалпы · Public" ? "Жалпы · Public" : "Корпоративтік · Employee")}</span><h3 className="font-bold">{tr(t.title)}</h3><p className="text-sm text-slate-500">{tr(t.desc)}</p><div className="mt-auto flex flex-wrap gap-2"><button disabled={t.locked} className={`${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`} onClick={() => t.locked ? setNotice(tr("Бұл үлгі қызметкерлерге арналған.")) : setOpenTemplate(t)}>{tr("Үлгіні ашу")}</button><button disabled={t.locked} className={`${button} bg-blue-600 text-white hover:bg-blue-700`} onClick={() => editTemplate(t)}>{tr("Үлгіні өзгерту")}</button>{!t.locked && <button className={`${button} border border-slate-200 bg-white text-slate-700`} onClick={() => downloadText(t.body, `template-${t.id}.txt`)}>⬇ .txt</button>}{!t.locked && sessionUser && (sessionUser.role === "admin" || t.owner === sessionUser.email) && <button className={`${button} border border-rose-200 bg-white text-rose-700`} onClick={() => deleteTemplate(t)}>{tr("Жою")}</button>}</div></article>);
-    const viewProps: WorkspaceProps = { nav, tab, setTab, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, templates, editorText, setEditorText, editorTitle, setEditorTitle, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authBusy };
+    const viewProps: WorkspaceProps = { nav, tab, setTab, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, templates, editorText, setEditorText, editorTitle, setEditorTitle, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
     return <div className="workspace-shell min-h-screen text-slate-900">
     <AppHeader props={viewProps}/>
     <MainContent props={viewProps}/>

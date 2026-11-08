@@ -2,12 +2,16 @@
   "name": "newnewnew",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "test:documents": "node --test tests/documents.test.mjs",
+    "test:store": "node --test tests/store-operations.test.mjs",
     "test:ui": "node --test tests/search-language.test.mjs"
   },
   "dependencies": {
