@@ -248,7 +248,18 @@ function Workspace() {
             setAuthBusy(false);
         }
     };
-    const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }).catch(() => { }); setSessionUser(null); setWorkspaces([]); setActiveWorkspaceId(null); setTab("compare"); setTemplates(initialTemplates); setUsers([]); setHistory([]); setTemplateQuery(""); setEditorText(""); setEditorTitle(tr("Құжат.txt")); setDocumentId(null); setEditorVersion(0); localStorage.removeItem("kt-agent-state"); setNotice(tr("Жүйеден шықтыңыз.")); };
+    const logout = async () => {
+        let serverLogoutFailed = false;
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 8000);
+        try {
+            const response = await fetch("/api/auth/logout", { method: "POST", signal: controller.signal, cache: "no-store" });
+            if (!response.ok) serverLogoutFailed = true;
+        } catch { serverLogoutFailed = true; }
+        finally { window.clearTimeout(timeout); }
+        setSessionUser(null); setWorkspaces([]); setActiveWorkspaceId(null); setTab("compare"); setTemplates(initialTemplates); setUsers([]); setHistory([]); setTemplateQuery(""); setEditorText(""); setEditorTitle(tr("Құжат.txt")); setDocumentId(null); setEditorVersion(0); setEditorWorkspaceId(null); localStorage.removeItem("kt-agent-state");
+        setNotice(tr(serverLogoutFailed ? "Осы құрылғыдан шықтыңыз, бірақ сервердегі сессияны тоқтату мүмкін болмады. Қайта кірмес бұрын серверді тексеріңіз." : "Жүйеден шықтыңыз."));
+    };
     const downloadText = (text: string, filename: string, type = "text/plain;charset=utf-8") => { const url = URL.createObjectURL(new Blob(["\ufeff", text], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); };
     const exportReport = async () => {
         if (!report)

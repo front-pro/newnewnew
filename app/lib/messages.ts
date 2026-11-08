@@ -3,6 +3,7 @@ export const messages: Record<string, readonly [string, string]> = {
   "Компаниялар": ["Компании", "Companies"],
   "Компаниялық жұмыс орны": ["Рабочее место компании", "Company workspace"],
   "Компания режимі": ["Режим компании", "Company workspace"],
+  "Осы құрылғыдан шықтыңыз, бірақ сервердегі сессияны тоқтату мүмкін болмады. Қайта кірмес бұрын серверді тексеріңіз.": ["Вы вышли на этом устройстве, но серверную сессию завершить не удалось. Проверьте сервер перед повторным входом.", "You signed out on this device, but the server session could not be revoked. Check the server before signing in again."],
   "МОДУЛЬДЕР": ["МОДУЛИ", "MODULES"],
   "Компания бөлімдері": ["Разделы компании", "Company modules"],
   "Компанияның жұмыс кеңістігі": ["Рабочее пространство компании", "Company workspace"],
