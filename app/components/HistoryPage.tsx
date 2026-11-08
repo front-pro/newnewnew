@@ -10,7 +10,7 @@ import type { HistoryRow } from "./workspace-context";
 export default function HistoryPage({ history }: { history: HistoryRow[] }) {
   const { tr, locale } = useLanguage();
   const [query, setQuery] = useState("");
-  const title = (row: HistoryRow) => row.type === "ЖИ талдауы" && /^Салыстыру #\d+$/.test(row.title) ? tr("Салыстыру #{id}", { id: row.title.split("#")[1] }) : row.title;
+  const title = (row: HistoryRow) => row.type === "ЖИ талдауы" && /^Салыстыру #\d+$/.test(row.title) ? tr("Салыстыру #{id}", { id: row.title.split("#")[1] }) : tr(row.title);
   const metadata = (meta: string) => meta.split(" · ").map(part => {
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(part)) {
       return new Intl.DateTimeFormat(locale, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(`${part.replace(" ", "T")}:00Z`));

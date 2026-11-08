@@ -223,24 +223,28 @@ function Workspace() {
     const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setAuthBusy(true);
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 15000);
         try {
-            const response = await fetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: authName, email: authEmail, password: authPassword }) });
+            const response = await fetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: authName, email: authEmail, password: authPassword }), signal: controller.signal, cache: "no-store" });
             const data = await response.json();
             if (!response.ok)
                 throw new Error(data.error || tr("Қате шықты"));
             setSessionUser(data.user);
-            await refreshAccountData(data.user);
-            await restoreAccountDocument();
             setAuthMode(null);
             setAuthName("");
             setAuthEmail("");
             setAuthPassword("");
             setNotice(authMode === "register" ? tr("Тіркелу сәтті аяқталды.") : tr("Жүйеге сәтті кірдіңіз."));
+            void Promise.all([refreshAccountData(data.user), restoreAccountDocument()]).catch(() => {
+                setNotice(tr("Аккаунтқа кірдіңіз, бірақ қосымша деректерді жүктеу мүмкін болмады. Бетті жаңартып көріңіз."));
+            });
         }
         catch (error) {
-            setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты"));
+            setNotice(controller.signal.aborted ? tr("Серверден жауап келмеді. Серверді қайта іске қосып, қайталап көріңіз.") : error instanceof Error ? tr(error.message) : tr("Қате шықты"));
         }
         finally {
+            window.clearTimeout(timeout);
             setAuthBusy(false);
         }
     };

@@ -10,6 +10,8 @@ export const messages: Record<string, readonly [string, string]> = {
   "Атыңызды енгізіңіз (ең көбі 100 таңба)": ["Введите имя (не более 100 символов)", "Enter your name (up to 100 characters)"],
   "Email тым ұзын": ["Email слишком длинный", "Email is too long"],
   "Құпиясөз 8–1024 таңба болуы керек": ["Пароль должен содержать от 8 до 1024 символов", "Password must be 8–1024 characters"],
+  "Серверден жауап келмеді. Серверді қайта іске қосып, қайталап көріңіз.": ["Сервер не ответил. Перезапустите его и попробуйте снова.", "The server did not respond. Restart it and try again."],
+  "Аккаунтқа кірдіңіз, бірақ қосымша деректерді жүктеу мүмкін болмады. Бетті жаңартып көріңіз.": ["Вы вошли, но дополнительные данные не загрузились. Обновите страницу.", "You signed in, but additional data did not load. Refresh the page."],
   "Талдауды іске қосу": ["Запустить анализ", "Run analysis"],
   "Мәтіндік файлды таңдау": ["Выбрать текстовый файл", "Choose a text file"],
   "Қолдайды: TXT, MD, CSV, TSV, JSON, XML және HTML.": ["Поддерживаются: TXT, MD, CSV, TSV, JSON, XML и HTML.", "Supported: TXT, MD, CSV, TSV, JSON, XML, and HTML."],
