@@ -1,4 +1,5 @@
 "use client";
+import Skeleton from "./Skeleton";
 import { useLanguage } from "./LanguageProvider";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import type { DocumentDetail, DocumentSummary } from "../lib/documents";
@@ -280,7 +281,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
 
     <div className={`grid items-start gap-5 ${selected ? "xl:grid-cols-[minmax(0,1fr)_360px]" : ""}`}>
       <section className={`${card} overflow-hidden p-0`} aria-label={tr("Сақталған құжаттар")} aria-busy={loading}>
-        {loading ? <div className="p-12 text-center text-sm text-slate-500">{tr("Құжаттар жүктелуде…")}</div> : error ? <div role="alert" className="space-y-3 p-10 text-center"><p className="text-sm text-rose-600">{tr(error)}</p><button onClick={() => { setLoading(true); setReload(value => value + 1); }} className={secondary}>{tr("Қайта жүктеу")}</button></div> : !filtered.length ? <div className="px-5 py-16 text-center">
+        {loading ? <Skeleton /> : error ? <div role="alert" className="space-y-3 p-10 text-center"><p className="text-sm text-rose-600">{tr(error)}</p><button onClick={() => { setLoading(true); setReload(value => value + 1); }} className={secondary}>{tr("Қайта жүктеу")}</button></div> : !filtered.length ? <div className="px-5 py-16 text-center">
           <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-slate-50 text-3xl text-slate-400" aria-hidden="true">▤</div>
           <h2 className="text-lg font-semibold">{hasFilters ? tr("Құжаттар табылмады") : tr("Алғашқы құжатыңызды қосыңыз")}</h2>
           <p className="mx-auto mb-5 mt-2 max-w-sm text-sm text-slate-500">{hasFilters ? tr("Іздеу сөзін өзгертіңіз немесе сүзгілерді тазалаңыз.") : tr("Редакторда құжат жасаңыз немесе мәтіндік файл жүктеңіз. Барлық нұсқалар осында сақталады.")}</p>
@@ -296,7 +297,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
         </>}
       </section>
 
-      {selected && <aside className={`${card} min-w-0 space-y-5`} aria-label={tr("Құжат нұсқалары")}>
+      {selected && <aside className={`version-panel ${card} min-w-0 space-y-5`} aria-label={tr("Құжат нұсқалары")}>
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-1 text-xs font-semibold uppercase tracking-wider text-blue-600">{tr("Нұсқалар тарихы")}</p><h2 className="break-words font-bold">{selected.title}</h2><p className="mt-1 text-xs text-slate-400">{tr("{count} сақталған нұсқа", { count: selected.versionCount })}</p></div><button onClick={() => setSelected(null)} aria-label={tr("Нұсқалар панелін жабу")} className="rounded-lg px-2 py-1 text-xl text-slate-400 hover:bg-slate-100">×</button></div>
         <div className="max-h-60 space-y-2 overflow-y-auto">{[...selected.versions].reverse().map(version => <button key={version.version} onClick={() => setSnapshotNumber(version.version)} aria-pressed={snapshotNumber === version.version} className={`flex w-full items-center justify-between gap-2 rounded-xl border p-3 text-left ${snapshotNumber === version.version ? "border-blue-200 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}><span><span className="font-mono text-sm font-bold text-slate-700">v{version.version}</span><time className="mt-1 block text-xs text-slate-500" dateTime={version.savedAt || undefined}>{date(version.savedAt)}</time></span>{version.version === selected.version && <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">{tr("Соңғы нұсқа")}</span>}</button>)}</div>
         <section className="space-y-3 border-t border-slate-100 pt-4"><h3 className="font-semibold">{tr("Пікірлер")}</h3><div className="max-h-48 space-y-2 overflow-auto">{comments.map(comment => <article key={comment.id} className="rounded-lg bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-600">{comment.author}</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{comment.text}</p><time className="mt-1 block text-[11px] text-slate-400">{date(comment.createdAt)}</time></article>)}{!comments.length && <p className="text-xs text-slate-400">{tr("Пікір әлі жоқ")}</p>}</div>{["owner", "editor", "commenter"].includes(selected.permission || "") && <div className="space-y-2"><textarea value={commentText} onChange={event => setCommentText(event.target.value)} maxLength={5000} placeholder={tr("Пікір қалдыру...")} className={`${field} min-h-20`}/><button onClick={() => void addComment()} disabled={!commentText.trim()} className={`${button} bg-blue-600 text-white disabled:opacity-50`}>{tr("Пікірді жіберу")}</button></div>}</section>
