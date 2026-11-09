@@ -27,9 +27,12 @@ export type WorkspaceProps = {
   a: string; setA: Dispatch<SetStateAction<string>>;
   b: string; setB: Dispatch<SetStateAction<string>>;
   report: Report | null;
+  analysisBusy: boolean;
+  analysisSources: { a: string; b: string };
   templates: Template[];
   editorText: string; setEditorText: Dispatch<SetStateAction<string>>;
   editorTitle: string; setEditorTitle: Dispatch<SetStateAction<string>>;
+  editorKey: number;
   documentId: string | null;
   editorVersion: number;
   editorBusy: boolean;

@@ -69,9 +69,12 @@ function Workspace() {
     const [tab, setTab] = useState<Tab>("dashboard");
     const [workspaces, setWorkspaces] = useState<CompanyWorkspace[]>([]);
     const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+    const [analysisBusy, setAnalysisBusy] = useState(false);
+    const [analysisSources, setAnalysisSources] = useState({ a: "", b: "" });
     const [a, setA] = useState(sampleA), [b, setB] = useState(sampleB), [report, setReport] = useState<Report | null>(null);
     const [templates, setTemplates] = useState(initialTemplates), [editorText, setEditorText] = useState(""), [editorTitle, setEditorTitle] = useState(tr("Құжат.txt"));
     const [documentId, setDocumentId] = useState<string | null>(null), [editorVersion, setEditorVersion] = useState(0), [editorBusy, setEditorBusy] = useState(false);
+    const [editorKey, setEditorKey] = useState(0);
     const [editorWorkspaceId, setEditorWorkspaceId] = useState<string | null>(null);
     const [openTemplate, setOpenTemplate] = useState<Template | null>(null), [notice, setNotice] = useState(""), [history, setHistory] = useState<HistoryRow[]>([]), [ready, setReady] = useState(false);
     const [sessionUser, setSessionUser] = useState<SessionUser | null>(null), [authMode, setAuthMode] = useState<"login" | "register" | "verify" | "reset" | "reset-confirm" | null>(null);
@@ -154,15 +157,19 @@ function Workspace() {
         }
     };
     const startAnalysis = async () => {
+        if (analysisBusy) return;
         if (!a.trim() || !b.trim()) {
             setNotice(tr("Екі құжатты да енгізіңіз."));
             return;
         }
+        setAnalysisBusy(true); setReport(null);
+        const sources = { a, b };
         try {
             const response = await fetch("/api/analysis/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a, b }) });
             const result = await response.json();
             if (!response.ok)
                 throw new Error(result.error);
+            setAnalysisSources(sources);
             setReport(result);
             if (sessionUser)
                 await refreshAccountData(sessionUser);
@@ -170,10 +177,10 @@ function Workspace() {
         }
         catch (error) {
             setNotice(error instanceof Error ? tr(error.message) : tr("Талдау орындалмады"));
-        }
+        } finally { setAnalysisBusy(false); }
     };
-    const newDocument = (workspaceId?: string) => { setDocumentId(null); setEditorVersion(0); setEditorWorkspaceId(workspaceId || null); setEditorText(""); setEditorTitle(tr("Жаңа құжат.txt")); setTab("editor"); };
-    const openDocument = (document: DocumentDetail, snapshot?: DocumentVersion) => { const latest = document.versions[document.versions.length - 1]; const selected = snapshot || latest; setDocumentId(document.id); setEditorVersion(latest.version); setEditorWorkspaceId(document.workspaceId || null); setEditorTitle(selected.title); setEditorText(selected.text); setTab("editor"); setNotice(snapshot && snapshot.version !== latest.version ? tr("v{p0} редакторда ашылды. Сақтау жаңа нұсқа жасайды.", { p0: snapshot.version }) : tr("«{p0}» редакторда ашылды.", { p0: document.title })); };
+    const newDocument = (workspaceId?: string) => { setEditorKey(key => key + 1); setDocumentId(null); setEditorVersion(0); setEditorWorkspaceId(workspaceId || null); setEditorText(""); setEditorTitle(tr("Жаңа құжат.txt")); setTab("editor"); };
+    const openDocument = (document: DocumentDetail, snapshot?: DocumentVersion) => { setEditorKey(key => key + 1); const latest = document.versions[document.versions.length - 1]; const selected = snapshot || latest; setDocumentId(document.id); setEditorVersion(latest.version); setEditorWorkspaceId(document.workspaceId || null); setEditorTitle(selected.title); setEditorText(selected.text); setTab("editor"); setNotice(snapshot && snapshot.version !== latest.version ? tr("v{p0} редакторда ашылды. Сақтау жаңа нұсқа жасайды.", { p0: snapshot.version }) : tr("«{p0}» редакторда ашылды.", { p0: document.title })); };
     const onDocumentDeleted = (id: string) => {
         if (documentId === id) {
             setDocumentId(null);
@@ -357,7 +364,7 @@ function Workspace() {
     const filteredTemplates = templates.filter(t => matchesSearch(templateQuery, [t.title, t.desc, t.locked ? "" : t.body, t.owner], locale));
     const filteredTemplateCount = filteredTemplates.length;
     const cards = filteredTemplates.map(t => <article key={t.id} className={`${card} interactive-card flex min-h-60 flex-col gap-3 ${t.locked ? "opacity-60" : ""}`}><span className={`w-fit rounded-md border px-2 py-1 font-mono text-[11px] font-semibold ${t.locked ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{t.locked ? tr("Құлыпталған 🔒") : tr(t.access === "public" || t.access === "Жалпы · Public" ? "Жалпы · Public" : "Корпоративтік · Employee")}</span><h3 className="font-bold">{tr(t.title)}</h3><p className="text-sm text-slate-500">{tr(t.desc)}</p><div className="mt-auto flex flex-wrap gap-2"><button disabled={t.locked} className={`${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`} onClick={() => t.locked ? setNotice(tr("Бұл үлгі қызметкерлерге арналған.")) : setOpenTemplate(t)}>{tr("Үлгіні ашу")}</button><button disabled={t.locked} className={`${button} bg-blue-600 text-white hover:bg-blue-700`} onClick={() => editTemplate(t)}>{tr("Үлгіні өзгерту")}</button>{!t.locked && <button className={`${button} border border-slate-200 bg-white text-slate-700`} onClick={() => downloadText(t.body, `template-${t.id}.txt`)}>⬇ .txt</button>}{!t.locked && sessionUser && (sessionUser.role === "admin" || t.owner === sessionUser.email) && <button className={`${button} border border-rose-200 bg-white text-rose-700`} onClick={() => deleteTemplate(t)}>{tr("Жою")}</button>}</div></article>);
-    const viewProps: WorkspaceProps = { nav, tab, setTab, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, templates, editorText, setEditorText, editorTitle, setEditorTitle, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
+    const viewProps: WorkspaceProps = { nav, tab, setTab, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, analysisBusy, analysisSources, templates, editorText, setEditorText, editorTitle, setEditorTitle, editorKey, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
     const dismissNotice = () => setNotice("");
     return <div className="workspace-shell min-h-screen text-slate-900">
     <Toast message={notice} dismiss={dismissNotice} />
