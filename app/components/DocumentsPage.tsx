@@ -1,4 +1,5 @@
 "use client";
+import DocumentDownloads from "./DocumentDownloads";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import { useLanguage } from "./LanguageProvider";
@@ -122,8 +123,8 @@ export default function DocumentsPage({ props, workspaceScope }: {
             return;
         setUploading(true);
         try {
-            if (file.size > 2 * 1024 * 1024)
-                throw new Error(tr("Файл көлемі 2 МБ-тан аспауы керек."));
+            if (file.size > 10 * 1024 * 1024)
+                throw new Error(tr("Файл 10 МБ-тан аспауы керек"));
             const text = await readDocumentFile(file);
             const selectedWorkspace = workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined;
             const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: file.name, text, source: "upload", workspaceId: selectedWorkspace }) });
@@ -265,7 +266,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
         {workspaceScope === undefined && <><label className="sr-only" htmlFor="document-workspace">{tr("Сақтау кеңістігі")}</label><select id="document-workspace" value={targetWorkspace} onChange={event => setTargetWorkspace(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">{tr("Жеке кеңістік")}</option>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></>}
         <label className={`${secondary} relative ${uploading ? "opacity-50" : "cursor-pointer"}`}>
           {uploading ? tr("Жүктелуде…") : tr("\u2191 Файл жүктеу")}
-          <input aria-label={tr("Құжат жүктеу")} className="absolute inset-0 w-full cursor-pointer opacity-0" type="file" accept=".txt,.md,.csv,.tsv,.json,.xml,.html,.log" disabled={uploading} onChange={upload}/>
+          <input aria-label={tr("Құжат жүктеу")} className="absolute inset-0 w-full cursor-pointer opacity-0" type="file" accept=".pdf,.docx,.txt,.md,.csv,.tsv,.json,.xml,.html,.log" disabled={uploading} onChange={upload}/>
         </label>
         <button onClick={() => newDocument(workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined)} className={`${button} gap-2 bg-blue-600 text-white hover:bg-blue-700`}><span aria-hidden="true">＋</span>{tr("Жаңа құжат")}</button>
       </div>
@@ -283,7 +284,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Нұсқалар")}</span><select aria-label={tr("Нұсқалар")} value={versions} onChange={event => setVersions(event.target.value)} className={field}><option value="all">{tr("Барлық нұсқалар")}</option><option value="single">{tr("Бір нұсқасы бар")}</option><option value="multiple">{tr("Бірнеше нұсқасы бар")}</option></select></label>
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Сұрыптау")}</span><select aria-label={tr("Сұрыптау")} value={sort} onChange={event => setSort(event.target.value)} className={field}><option value="recent">{tr("Жаңалары алдымен")}</option><option value="oldest">{tr("Ескілері алдымен")}</option><option value="name">{tr("Атауы бойынша")}</option></select></label>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><p role="status">{loading ? tr("Құжаттар жүктелуде…") : tr("{p0} / {p1} құжат", { p0: filtered.length, p1: documents.length })}</p>{hasFilters ? <button onClick={resetFilters} className="font-semibold text-blue-600 hover:underline">{tr("Сүзгілерді тазалау \u00D7")}</button> : <p>{tr("Мәтіндік файлдар · 2 МБ дейін · 200 000 таңбаға дейін")}</p>}</div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><p role="status">{loading ? tr("Құжаттар жүктелуде…") : tr("{p0} / {p1} құжат", { p0: filtered.length, p1: documents.length })}</p>{hasFilters ? <button onClick={resetFilters} className="font-semibold text-blue-600 hover:underline">{tr("Сүзгілерді тазалау \u00D7")}</button> : <p>{tr("PDF, DOCX және мәтіндік файлдар · 10 МБ дейін")}</p>}</div>
     </section>
 
     <div className={`grid items-start gap-5 ${selected ? "xl:grid-cols-[minmax(0,1fr)_360px]" : ""}`}>
@@ -313,7 +314,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
         {snapshot && <><div><div className="mb-2 flex items-center justify-between text-xs"><h3 className="font-semibold text-slate-600">{tr("Алдын ала қарау · v")}{snapshot.version}</h3><span className="text-slate-400">{size(new TextEncoder().encode(snapshot.text).length)}</span></div><pre id="document-preview" className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-6 text-slate-600">{snapshot.text.split("\n").map((line,i)=><span className="block scroll-mt-10" id={`preview-line-${i}`} key={i}>{line || " "}</span>)}</pre></div>
           {selected.approval && <section className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><b>{tr("Бекіту күйі")}: {tr(selected.approval.status === "pending" ? "Күтуде" : selected.approval.status === "approved" ? "Бекітілді" : selected.approval.status === "rejected" ? "Қабылданбады" : selected.approval.status === "stale" ? "Ескірген нұсқа" : "Ауыстырылған")}</b><p className="mt-1 text-xs">v{selected.approval.version} · {selected.approval.steps.map(step => `${step.email}: ${step.decision}`).join(" · ")}</p></section>}
           {["owner", "editor"].includes(selected.permission || "") && <form onSubmit={requestApproval} className="space-y-2 rounded-xl border border-slate-200 p-3"><label className="block text-xs font-semibold">{tr("Бекітушілердің email-ы (үтірмен бөліңіз)")}<input required value={approverEmails} onChange={event => setApproverEmails(event.target.value)} placeholder="reviewer@example.com" className={`${field} mt-1`}/></label><button disabled={selected.approval?.status === "pending"} className={`${button} w-full bg-blue-600 text-white disabled:opacity-50`}>{tr("Осы нұсқаны бекітуге жіберу")}</button></form>}
-          <div className="flex flex-wrap gap-2"><button onClick={() => openDocument(selected, snapshot)} className={`${button} grow bg-blue-600 text-white hover:bg-blue-700`}>{tr("Редакторда ашу")}</button><button onClick={() => downloadText(snapshot.text, snapshot.title)} className={secondary}>{tr("\u2193 Жүктеу")}</button></div>
+          <div className="flex flex-wrap gap-2"><button onClick={() => openDocument(selected, snapshot)} className={`${button} grow bg-blue-600 text-white hover:bg-blue-700`}>{tr("Редакторда ашу")}</button><button onClick={() => downloadText(snapshot.text, snapshot.title.replace(/\.[^.]+$/, "") + ".txt")} className={secondary}>TXT</button><DocumentDownloads title={snapshot.title} text={snapshot.text} onError={setNotice}/></div>
           <button onClick={() => deleteDocument(selected)} disabled={openingId !== null} className={`${button} w-full border border-rose-200 text-rose-600 hover:bg-rose-50`}>{tr("Құжатты жою")}</button>
           {snapshot.version !== selected.version && ["owner", "editor"].includes(selected.permission || "") && <button onClick={() => void restoreVersion()} className={`${button} w-full border border-blue-200 bg-blue-50 text-blue-700`}>{tr("Осы нұсқаны қалпына келтіру")}</button>}
         </>}
