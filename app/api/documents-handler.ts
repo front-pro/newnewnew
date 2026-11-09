@@ -33,6 +33,20 @@ export async function handleDocuments(request: Request, path: string[], store: S
   const canEdit = (document: SavedDocument) => ["owner", "editor"].includes(permission(document));
   const owned = store.documents.filter(document => permission(document) !== "none" && (workspaceScope === undefined || (workspaceScope === null ? !document.workspaceId : document.workspaceId === workspaceScope)));
 
+  if (path.length === 2 && path[1] === "organization" && method === "PATCH") {
+    const document = owned.find(item => item.id === path[0]);
+    if (!document) return fail("Құжат табылмады", 404);
+    let body; try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    if (!body || typeof body !== "object") return fail("Сұрау пішімі қате");
+    if (body.folder !== undefined && (typeof body.folder !== "string" || body.folder.length > 80)) return fail("Қалта атауы 80 таңбадан аспауы керек");
+    if (body.tags !== undefined && (!Array.isArray(body.tags) || body.tags.length > 12 || body.tags.some((tag: unknown) => typeof tag !== "string" || tag.length > 32))) return fail("Ең көбі 12 тег, әрқайсысы 32 таңбаға дейін");
+    if (body.favorite !== undefined && typeof body.favorite !== "boolean") return fail("Сұрау пішімі қате");
+    const previous = document.organization?.[user.id] || { folder: "", tags: [], favorite: false };
+    document.organization = { ...document.organization, [user.id]: { folder: body.folder === undefined ? previous.folder : body.folder.trim(), tags: body.tags === undefined ? previous.tags : [...new Set<string>(body.tags.map((tag: string) => tag.trim()).filter(Boolean))], favorite: body.favorite === undefined ? previous.favorite : body.favorite } };
+    await writeStore(store);
+    return json(summarizeDocument(document, user.id));
+  }
+
   if (path.length === 2 && path[1] === "approval" && method === "POST") {
     const document = owned.find(item => item.id === path[0] && canEdit(item));
     if (!document) return fail("Құжат табылмады", 404);
@@ -80,7 +94,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.restore_version", resourceType: "document", resourceId: document.id, metadata: { restoredFrom: versionNumber, version: restored.version } });
     const approval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId) : undefined;
-    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
   }
 
   if (path.length === 2 && path[1] === "comments" && method === "GET") {
@@ -96,7 +110,10 @@ export async function handleDocuments(request: Request, path: string[], store: S
     try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text || text.length > 5000) return fail("Пікір 1–5 000 таңба болуы керек");
-    const comment = { id: randomUUID(), author: user.email, text, createdAt: new Date().toISOString() };
+    const clause = typeof body.clause === "string" ? body.clause.trim() : "";
+    const version = clause ? document.versions.find(v => v.version === Number(body.version)) : undefined;
+    if (clause && (!/^\d+(?:\.\d+)*$/.test(clause) || clause.length > 40 || !version || !version.text.split(/\r?\n/).some(line => line.trim().match(/^(\d+(?:\.\d+)*)\.?\s/)?.[1] === clause))) return fail("Тармақ нөмірі немесе нұсқа табылмады");
+    const comment = { ...(clause ? { clause, version: version!.version } : {}), id: randomUUID(), author: user.email, text, createdAt: new Date().toISOString() };
     document.comments = [...(document.comments || []), comment];
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.comment", resourceType: "document", resourceId: document.id, metadata: { commentId: comment.id } });
@@ -166,7 +183,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
   }
 
   if (!path.length && method === "GET") {
-    return json(owned.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document), permission: permission(document) })));
+    return json(owned.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document, user.id), permission: permission(document) })));
   }
   if (path.length === 1 && path[0] === "me" && method === "GET") {
     const latest = owned.filter(document => document.owner === user.email).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -177,7 +194,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
     if (!document) return fail("Құжат табылмады", 404);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.read", resourceType: "document", resourceId: document.id, metadata: { version: document.versions[document.versions.length - 1].version } });
     const approval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId) : undefined;
-    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
   }
   if (path.length === 1 && path[0] !== "me" && method === "DELETE") {
     const document = owned.find(item => item.id === path[0] && permission(item) === "owner");
@@ -240,7 +257,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
     store.log.push({ owner: user.email, type: "Құжат", tone: "green", title, meta: `${stamp()} · v${version}` });
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: existing ? "document.update" : "document.create", resourceType: "document", resourceId: document.id, metadata: { version } });
-    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions }, existing ? 200 : 201);
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document), shares: document.shares || [], versions: document.versions }, existing ? 200 : 201);
   }
   return fail("API маршрут табылмады", 404);
 }
