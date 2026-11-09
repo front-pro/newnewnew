@@ -20,6 +20,9 @@ async function patch(request: Request) {
       if (avatar.length > 1_400_000) return json({ error: "Аватар суреті 1 МБ-тан аспауы керек" }, 413);
     }
 
+    if ((body.company !== undefined && (typeof body.company !== "string" || body.company.length > 120)) || (body.position !== undefined && (typeof body.position !== "string" || body.position.length > 120))) return json({ error: "Ұйым және лауазым 120 таңбадан аспауы керек" }, 400);
+    if (body.company !== undefined) user.company = body.company.trim();
+    if (body.position !== undefined) user.position = body.position.trim();
     user.name = name;
     user.avatar = avatar || undefined;
     await writeStore(store);

@@ -1,6 +1,6 @@
 "use client";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
-import { PreferencesProvider } from "./components/PreferencesProvider";
+import { PreferencesProvider, usePreferences } from "./components/PreferencesProvider";
 import Toast from "./components/Toast";
 import AppHeader from "./components/AppHeader";
 import MainContent from "./components/MainContent";
@@ -64,6 +64,7 @@ const initialTemplates: Template[] = [
 export default function Home() { return <LanguageProvider><ThemeProvider><PreferencesProvider><Workspace /></PreferencesProvider></ThemeProvider></LanguageProvider>; }
 function Workspace() {
     const { tr, locale } = useLanguage();
+    const { preferences } = usePreferences();
     const [templateQuery, setTemplateQuery] = useState("");
     const [tab, setTab] = useState<Tab>("dashboard");
     const [workspaces, setWorkspaces] = useState<CompanyWorkspace[]>([]);
@@ -131,8 +132,8 @@ function Workspace() {
         }).catch(() => { });
     }, [refreshAccountData, restoreAccountDocument]);
     useEffect(() => {
-        if (ready) localStorage.setItem("kt-agent-state", JSON.stringify({ editorText }));
-    }, [ready, editorText]);
+        if (ready) { if (preferences.autosave) localStorage.setItem("kt-agent-state", JSON.stringify({ editorText })); else localStorage.removeItem("kt-agent-state"); }
+    }, [ready, editorText, preferences.autosave]);
     const nav: [
         Tab,
         string
