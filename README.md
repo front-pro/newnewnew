@@ -22,12 +22,11 @@ npm run build
 npm start
 ```
 
-`npm run build` әдепкіде webpack қолданады. Tailwind стильдері dev және production үшін ортақ PostCSS конфигурациясымен жиналады.
+Dev және production құрастырулары Turbopack қолданады. Tailwind стильдері
+бұрынғы `@tailwindcss/turbopack` loader арқылы жиналады.
 
-Егер `Cannot find module '@tailwindcss/postcss'` қатесі шықса, dev серверді
-`Ctrl+C` арқылы тоқтатып, жоба папкасында төмендегі командаларды орындаңыз.
-Бұл Windows PowerShell үшін де жарайды. Жаңа commit-тен кейін өзгерген
-тәуелділіктерді қайта орнату қажет:
+Жаңартудан кейін dev серверді `Ctrl+C` арқылы тоқтатып, жоба папкасында
+төмендегі командаларды орындаңыз. Бұл Windows PowerShell үшін де жарайды:
 
 ```bash
 git pull

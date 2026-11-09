@@ -3,8 +3,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
 
 test("production CSS contains utility layouts, icon sizes and reduced-motion rules", async () => {
-  const directory = new URL("../.next/static/css/", import.meta.url);
-  const files = (await readdir(directory)).filter(file => file.endsWith(".css"));
+  const directory = new URL("../.next/static/", import.meta.url);
+  const files = (await readdir(directory, { recursive: true })).filter(file => file.endsWith(".css"));
   assert.ok(files.length, "Run npm run build before this test");
   const css = (await Promise.all(files.map(file => readFile(new URL(file, directory), "utf8")))).join("\n");
   assert.match(css, /\.flex\s*\{\s*display:\s*flex/);
