@@ -11,13 +11,11 @@
     "start": "next start",
     "lint": "eslint",
     "test:documents": "node --test tests/documents.test.mjs",
-    "test:ocr": "node --test tests/ocr.test.mjs",
     "test:store": "node --test tests/store-operations.test.mjs",
     "test:styles": "node --test tests/production-styles.test.mjs",
     "test:ui": "node --test tests/search-language.test.mjs tests/workspace-ui.test.mjs"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^1.1.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "diff": "^9.0.0",
     "docx": "^9.15.3",
@@ -27,8 +25,7 @@
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "tesseract.js": "^7.0.0"
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.5",

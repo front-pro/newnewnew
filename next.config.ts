@@ -6,10 +6,7 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
-  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "tesseract.js", "tesseract.js-core"],
-  outputFileTracingIncludes: {
-    "/api/files/parse": ["./assets/ocr/**/*", "./node_modules/tesseract.js/src/worker-script/**/*", "./node_modules/tesseract.js-core/**/*"],
-  },
+  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
   cacheComponents: true,
   partialPrefetching: true,
 

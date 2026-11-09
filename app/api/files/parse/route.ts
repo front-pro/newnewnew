@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { consumeAuthRateLimit, currentUser, withStoreLock } from "../../auth/_lib";
-import { extractDocumentDetailed } from "../../../lib/document-formats";
-import { OcrError } from "../../../lib/ocr";
+import { extractDocument } from "../../../lib/document-formats";
 export async function POST(request: Request) {
   const user = await currentUser(request);
   if (!user) return NextResponse.json({ error: "Жүйеге кіріңіз" }, { status: 401 });
@@ -12,7 +11,7 @@ export async function POST(request: Request) {
     const form = await request.formData(), file = form.get("file");
     if (!(file instanceof File) || !file.size || file.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Файл 10 МБ-тан аспауы керек" }, { status: 400 });
     const extension = file.name.split(".").at(-1)?.toLowerCase() || "";
-    const result = await extractDocumentDetailed(Buffer.from(await file.arrayBuffer()), extension, request.signal);
-    return NextResponse.json(result, { headers: { "Cache-Control": "private, no-store" } });
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Файлды оқу мүмкін болмады." }, { status: error instanceof OcrError ? error.status : 422 }); }
+    const text = await extractDocument(Buffer.from(await file.arrayBuffer()), extension);
+    return NextResponse.json({ text }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Файлды оқу мүмкін болмады." }, { status: 422 }); }
 }

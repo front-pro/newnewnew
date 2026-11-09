@@ -5,34 +5,17 @@ import fontkit from "@pdf-lib/fontkit";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import mammoth from "mammoth";
 import { unzipSync } from "fflate";
-import { recognizeScannedPages } from "./ocr";
 
-export async function extractDocumentDetailed(buffer: Buffer, extension: string, signal?: AbortSignal) {
+export async function extractDocument(buffer: Buffer, extension: string) {
   let text: string;
-  let ocrPages = 0;
   if (extension === "pdf") {
     if (!buffer.subarray(0, 1024).includes(Buffer.from("%PDF-"))) throw new Error("PDF файлының пішімі қате");
     const { PDFParse } = await import("pdf-parse");
     const parser = new PDFParse({ data: new Uint8Array(buffer), isEvalSupported: false });
     try {
-      const info = await parser.getInfo({ parsePageInfo: true });
+      const info = await parser.getInfo();
       if (info.total > 100) throw new Error("PDF 100 беттен аспауы керек");
-      const result = await parser.getText({ pageJoiner: "\n\n" });
-      // Preserve short native text; only pages with a large image need OCR.
-      // A scan may still have a native page number or a short header.
-      const shortPages = result.pages.filter(page => page.text.replace(/[^\p{L}\p{N}]/gu, "").length < 24).map(page => page.num);
-      const images = shortPages.length ? await parser.getImage({ partial: shortPages, imageThreshold: 256, imageBuffer: false, imageDataUrl: false }) : null;
-      const candidates = images?.pages.filter(page => page.images.length).map(page => page.pageNumber) ?? [];
-      const recognized = await recognizeScannedPages(candidates, async number => {
-        const pageInfo = info.pages.find(page => page.pageNumber === number);
-        if (!pageInfo || pageInfo.width <= 0 || 1600 * 1600 * pageInfo.height / pageInfo.width > 12_000_000) throw new Error("OCR суреті тым үлкен");
-        const screenshot = await parser.getScreenshot({ partial: [number], desiredWidth: 1600, imageBuffer: true, imageDataUrl: false });
-        const image = screenshot.pages[0];
-        if (!image || image.width * image.height > 12_000_000) throw new Error("OCR суреті тым үлкен");
-        return image.data;
-      }, signal);
-      ocrPages = recognized.size;
-      text = result.pages.map(page => recognized.get(page.num) || page.text).join("\n\n");
+      text = (await parser.getText({ pageJoiner: "\n\n" })).text;
     } finally { await parser.destroy(); }
   } else if (extension === "docx") {
     let total = 0;
@@ -40,13 +23,9 @@ export async function extractDocumentDetailed(buffer: Buffer, extension: string,
     if (!files["word/document.xml"]) throw new Error("DOCX файлының пішімі қате");
     text = (await mammoth.extractRawText({ buffer })).value;
   } else throw new Error("Тек PDF және DOCX қолдайды");
-  if (!text.trim()) throw new Error("Файлдан мәтін табылмады. Скан сапасын тексеріңіз.");
+  if (!text.trim()) throw new Error("Файлда оқылатын мәтін жоқ. Сканерленген PDF үшін OCR қажет.");
   if (text.length > 200000) throw new Error("Құжат тым үлкен (макс. 200 000 таңба)");
-  return { text, ocrPages };
-}
-
-export async function extractDocument(buffer: Buffer, extension: string) {
-  return (await extractDocumentDetailed(buffer, extension)).text;
+  return text;
 }
 
 export async function exportDocument(format: "pdf" | "docx", title: string, text: string) {
