@@ -11,7 +11,7 @@
 Node.js 22.5 немесе жаңарақ нұсқа қажет.
 
 ```bash
-npm ci
+npm ci --include=dev
 npm run dev
 ```
 
@@ -23,6 +23,25 @@ npm start
 ```
 
 `npm run build` әдепкіде webpack қолданады. Tailwind стильдері dev және production үшін ортақ PostCSS конфигурациясымен жиналады.
+
+Егер `Cannot find module '@tailwindcss/postcss'` қатесі шықса, dev серверді
+`Ctrl+C` арқылы тоқтатып, жоба папкасында төмендегі командаларды орындаңыз.
+Бұл Windows PowerShell үшін де жарайды. Жаңа commit-тен кейін өзгерген
+тәуелділіктерді қайта орнату қажет:
+
+```bash
+git pull
+npm ci --include=dev
+npm run dev
+```
+
+Браузерде `http://localhost:3000` ашыңыз. Қате сақталса, серверді тоқтатып,
+`.next` құрастыру кэшін өшіріп, қайта іске қосыңыз:
+
+```bash
+node -e "require('node:fs').rmSync('.next', { recursive: true, force: true })"
+npm run dev
+```
 
 ## Негізгі API
 
