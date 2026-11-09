@@ -8,6 +8,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import { scannedPdf } from "./helpers/scanned-pdf.mjs";
 
 let server, directory, base, cookie, otherCookie, document;
 let output = "";
@@ -309,11 +311,46 @@ test("Word and PDF exports round-trip Kazakh text and reject invalid files", asy
     assert.equal(new TextDecoder().decode(bytes.slice(0, format === "pdf" ? 4 : 2)), format === "pdf" ? "%PDF" : "PK");
     const form = new FormData(); form.set("file", new File([bytes], `test.${format}`));
     const parsed = await fetch(`${base}/api/files/parse`, { method: "POST", headers: { Cookie: cookie }, body: form });
-    assert.equal(parsed.status, 200); const data = await parsed.json(); assert.match(data.text, /ҚАЗАҚША ҚҰЖАТ/); assert.match(data.text, /Ә Ғ Қ Ң Ө Ұ Ү Һ І/);
+    assert.equal(parsed.status, 200); const data = await parsed.json(); assert.equal(data.ocrPages, 0); assert.match(data.text, /ҚАЗАҚША ҚҰЖАТ/); assert.match(data.text, /Ә Ғ Қ Ң Ө Ұ Ү Һ І/);
   }
   assert.equal((await api("files/export", { method: "POST", session: "", body: { format: "pdf", text, title: "test" } })).response.status, 401);
   const form = new FormData(); form.set("file", new File(["invalid"], "test.pdf"));
   assert.equal((await fetch(`${base}/api/files/parse`, { method: "POST", headers: { Cookie: cookie }, body: form })).status, 422);
+});
+
+async function parsePdf(bytes, session = cookie) {
+  const form = new FormData(); form.set("file", new File([bytes], "scanned.pdf"));
+  const response = await fetch(`${base}/api/files/parse`, { method: "POST", headers: session ? { Cookie: session } : {}, body: form });
+  return { response, data: await response.json() };
+}
+
+test("OCR reads Kazakh, Russian and English scans and preserves native page order", { timeout: 90000 }, async () => {
+  const { pdf } = await scannedPdf({ nativePage: true, pageNumber: true });
+  const { response, data } = await parsePdf(pdf);
+  assert.equal(response.status, 200, JSON.stringify(data));
+  assert.equal(data.ocrPages, 1);
+  for (const text of ["ҚАЗАҚСТАН РЕСПУБЛИКАСЫ", "Сынақ құжаты", "Документ для проверки", "Scanned document OCR"]) assert.ok(data.text.includes(text), data.text);
+  assert.ok(data.text.indexOf("Native paragraph") < data.text.indexOf("ҚАЗАҚСТАН"));
+  const saved = await api("documents", { method: "POST", body: { title: "OCR review", text: data.text, source: "upload" } });
+  assert.equal(saved.response.status, 201);
+  assert.equal((await api(`documents/${saved.data.id}`)).data.versions.at(-1).text, data.text);
+});
+
+test("short native text and blank pages do not start OCR", async () => {
+  const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.Helvetica);
+  pdf.addPage().drawText("Short native text", { x: 45, y: 700, font }); pdf.addPage();
+  const parsed = await parsePdf(await pdf.save());
+  assert.equal(parsed.response.status, 200); assert.equal(parsed.data.ocrPages, 0);
+  assert.equal(parsed.data.text.trim(), "Short native text");
+  const empty = await PDFDocument.create(); empty.addPage();
+  assert.equal((await parsePdf(await empty.save())).response.status, 422);
+});
+
+test("OCR enforces authentication and its ten scanned page limit", async () => {
+  const { pdf } = await scannedPdf({ pages: 11 });
+  assert.equal((await parsePdf(pdf, "")).response.status, 401);
+  const result = await parsePdf(pdf);
+  assert.equal(result.response.status, 413); assert.match(result.data.error, /10/);
 });
 
 test("profile avatar and organization persist without allowing role escalation", async () => {

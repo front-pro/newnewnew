@@ -125,7 +125,8 @@ export default function DocumentsPage({ props, workspaceScope }: {
         try {
             if (file.size > 10 * 1024 * 1024)
                 throw new Error(tr("Файл 10 МБ-тан аспауы керек"));
-            const text = await readDocumentFile(file);
+            let ocrPages = 0;
+            const text = await readDocumentFile(file, count => { ocrPages = count; });
             const selectedWorkspace = workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined;
             const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: file.name, text, source: "upload", workspaceId: selectedWorkspace }) });
             const document = await response.json();
@@ -134,7 +135,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
             setDocuments(current => [document, ...current]);
             setError("");
             resetFilters();
-            setNotice(tr("«{p0}» кітапханаға сақталды.", { p0: document.title }));
+            setNotice(ocrPages ? tr("OCR мәтінді таныды. Нәтижені түпнұсқамен салыстырып тексеріңіз.") : tr("«{p0}» кітапханаға сақталды.", { p0: document.title }));
             await onDocumentsSaved();
         }
         catch (error) {

@@ -2351,5 +2351,41 @@ export const messages: Record<string, readonly [string, string]> = {
   "Себеп 2 000 таңбадан аспауы керек": [
     "Причина не должна превышать 2 000 символов",
     "Reason must not exceed 2,000 characters"
+  ],
+  "OCR мәтінді таныды. Нәтижені түпнұсқамен салыстырып тексеріңіз.": [
+    "OCR распознал текст. Сверьте результат с оригиналом.",
+    "OCR recognized the text. Check the result against the original."
+  ],
+  "PDF оқылуда. Скан болса, мәтін танылады…": [
+    "Читаем PDF. Распознаём текст сканированных страниц…",
+    "Reading PDF. Recognizing text on scanned pages…"
+  ],
+  "OCR үшін бір файлда ең көбі 10 скан беті болуы керек": [
+    "В одном файле допускается не более 10 сканированных страниц для OCR",
+    "OCR supports up to 10 scanned pages per file"
+  ],
+  "OCR қазір бос емес. Сәл кейін қайталаңыз.": [
+    "OCR сейчас занят. Повторите попытку чуть позже.",
+    "OCR is busy. Please try again shortly."
+  ],
+  "OCR тоқтатылды": [
+    "Распознавание остановлено",
+    "OCR cancelled"
+  ],
+  "OCR уақыты аяқталды. Файлды шағын бөліктерге бөліп көріңіз.": [
+    "Время распознавания истекло. Разделите файл на небольшие части.",
+    "OCR timed out. Try splitting the file into smaller parts."
+  ],
+  "OCR мәтінді тани алмады. Скан сапасын тексеріңіз.": [
+    "Не удалось распознать текст. Проверьте качество скана.",
+    "OCR could not recognize the text. Check the scan quality."
+  ],
+  "OCR суреті тым үлкен": [
+    "Изображение слишком большое для OCR",
+    "The image is too large for OCR"
+  ],
+  "Файлдан мәтін табылмады. Скан сапасын тексеріңіз.": [
+    "Текст в файле не найден. Проверьте качество скана.",
+    "No text found in the file. Check the scan quality."
   ]
 };
