@@ -13,7 +13,7 @@ import { matchesSearch } from "./lib/search";
 import { LanguageProvider, useLanguage } from "./components/LanguageProvider";
 import { ThemeProvider } from "./components/ThemeProvider";
 import type { DocumentDetail, DocumentVersion } from "./lib/documents";
-type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
+type Tab = "dashboard" | "profile" | "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
 type Template = {
     id: number;
     title: string;
@@ -65,7 +65,7 @@ export default function Home() { return <LanguageProvider><ThemeProvider><Prefer
 function Workspace() {
     const { tr, locale } = useLanguage();
     const [templateQuery, setTemplateQuery] = useState("");
-    const [tab, setTab] = useState<Tab>("compare");
+    const [tab, setTab] = useState<Tab>("dashboard");
     const [workspaces, setWorkspaces] = useState<CompanyWorkspace[]>([]);
     const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
     const [a, setA] = useState(sampleA), [b, setB] = useState(sampleB), [report, setReport] = useState<Report | null>(null);
@@ -136,7 +136,7 @@ function Workspace() {
     const nav: [
         Tab,
         string
-    ][] = activeWorkspaceId ? [["company", tr("Компаниялық жұмыс орны")], ...(tab === "editor" ? [["editor", tr("Құжат редакторы")] as [Tab, string]] : [])] : [["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ...(sessionUser ? [["approvals", tr("Бекітулер")] as [Tab, string]] : []), ["users", tr("Пайдаланушылар")], ...(sessionUser && workspaces.length === 0 ? [["company", tr("Компаниялық жұмыс орны")] as [Tab, string]] : [])];
+    ][] = activeWorkspaceId ? [["company", tr("Компаниялық жұмыс орны")], ...(tab === "editor" ? [["editor", tr("Құжат редакторы")] as [Tab, string]] : [])] : [["dashboard", tr("Басты бет")], ["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ...(sessionUser ? [["approvals", tr("Бекітулер")] as [Tab, string]] : []), ["users", tr("Пайдаланушылар")], ...(sessionUser && workspaces.length === 0 ? [["company", tr("Компаниялық жұмыс орны")] as [Tab, string]] : [])];
     const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file)
@@ -361,8 +361,7 @@ function Workspace() {
     return <div className="workspace-shell min-h-screen text-slate-900">
     <Toast message={notice} dismiss={dismissNotice} />
     <AppHeader props={viewProps}/>
-    <MainContent props={viewProps}/>
+    <div className="app-content xl:ml-64"><MainContent props={viewProps}/><AppFooter /></div>
     <AuthDialog props={viewProps}/>
-    <AppFooter />
   </div>;
 }

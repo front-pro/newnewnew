@@ -1,7 +1,7 @@
 import type { DocumentDetail, DocumentVersion } from "../lib/documents";
 import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 
-export type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
+export type Tab = "dashboard" | "profile" | "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
 export type CompanyWorkspace = { id: string; name: string; role: "admin" | "member" };
 export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
 export type Change = { type: string; title: string; description: string; a: string; b: string };
