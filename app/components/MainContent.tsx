@@ -11,11 +11,11 @@ import DocumentsPage from "./DocumentsPage";
 import HistoryPage from "./HistoryPage";
 import CompaniesPage from "./CompaniesPage";
 import CompanyWorkspacePage from "./CompanyWorkspacePage";
-import SessionManager from "./SessionManager";
+
 import ApprovalInbox from "./ApprovalInbox";
 export default function MainContent({ props }: { props: WorkspaceProps }) {
   const { tr } = useLanguage();
-  const { tab, openTemplate, setOpenTemplate, history, templateQuery, setTemplateQuery, filteredTemplateCount, templates, sessionUser, setAuthMode, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, editTemplate, createTemplate, changeRole, logout, cards, setNotice } = props;
+  const { tab, openTemplate, setOpenTemplate, history, templateQuery, setTemplateQuery, filteredTemplateCount, templates, sessionUser, setAuthMode, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, editTemplate, createTemplate, changeRole, cards, setNotice } = props;
   return (
     <main key={tab} className="mx-auto max-w-7xl page-enter space-y-6 px-4 py-7 md:px-8">
       {tab === "dashboard" && <Dashboard key={sessionUser?.id || "guest"} props={props}/>}
@@ -30,7 +30,8 @@ export default function MainContent({ props }: { props: WorkspaceProps }) {
       {tab === "history" && sessionUser && <HistoryPage history={history} />}
       {tab === "approvals" && sessionUser && <ApprovalInbox setNotice={setNotice}/>}
       {tab === "profile" && <ProfilePage key={sessionUser?.id || "guest"} props={props}/>}
-      {tab === "users" && <><div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tab === "users" && sessionUser?.role === "admin" ? "Пайдаланушыларды басқару" : "Аккаунт"}</h1><p className="mt-1 text-slate-500">{tab === "users" && sessionUser?.role === "admin" ? "Аккаунттарға рөл беру (RBAC)" : "Тіркелгі ақпараты"}</p></div>{tab === "users" && sessionUser?.role === "admin" ? <section className={`${card} divide-y divide-slate-100 p-0`}>{users.map(user => <div key={user.email} className="flex flex-wrap items-center justify-between gap-3 p-4"><div><b className="text-sm">{user.name}</b><p className="font-mono text-xs text-slate-400">{user.email}</p></div><select value={user.role} disabled={user.email === sessionUser.email} onChange={e => changeRole(user.email, e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm"><option value="user">user</option><option value="employee">employee</option><option value="admin">admin</option></select></div>)}</section> : <section className={card}>{sessionUser ? <><div className="space-y-2 text-sm"><p><b>Аты-жөні:</b> {sessionUser.name}</p><p><b>Email:</b> {sessionUser.email}</p><p><b>Рөлі:</b> {sessionUser.role}</p><button onClick={logout} className={`${button} mt-3 border border-slate-200 bg-white`}>Жүйеден шығу</button></div><SessionManager setNotice={setNotice}/></> : <div className="space-y-3"><p className="text-sm text-slate-600">Аккаунтқа кіру немесе жаңасын тіркеу қажет.</p><div className="flex gap-2"><button onClick={() => setAuthMode("login")} className={`${button} border border-slate-200 bg-white`}>Кіру</button><button onClick={() => setAuthMode("register")} className={`${button} bg-blue-600 text-white`}>Тіркелу</button></div></div>}</section>}</>}
+      {tab === "users" && sessionUser?.role === "admin" && <><div><h1 className="text-3xl font-bold">{tr("Пайдаланушыларды басқару")}</h1><p className="mt-2 text-sm text-slate-500">{tr("Аккаунттарға рөл беру (RBAC)")}</p></div><section className={card}>{users.map(user=><div key={user.email} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 py-4"><div><b className="text-sm">{user.name}</b><p className="text-xs text-slate-400">{user.email}</p></div><select value={user.role} disabled={user.email===sessionUser.email} onChange={e=>changeRole(user.email,e.target.value)} className="rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="user">{tr("Пайдаланушы")}</option><option value="employee">{tr("Қызметкер")}</option><option value="admin">{tr("Әкімші")}</option></select></div>)}</section></>}
+      {tab === "users" && sessionUser?.role !== "admin" && <ProfilePage key={sessionUser?.id || "guest"} props={props}/>}
     </main>
   );
 }
