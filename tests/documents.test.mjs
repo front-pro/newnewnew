@@ -285,3 +285,51 @@ test("company membership, document isolation, and admin audit are enforced", asy
   assert.deepEqual((await api(`workspaces/${workspaceId}/groups`)).data[0].members, []);
   assert.equal((await api(`documents/${companyDoc.data.id}`, { session: otherCookie })).response.status, 404);
 });
+
+test("private folders, favorites and tags do not leak through a shared document", async () => {
+  const created = await api("documents", { method: "POST", body: { title: "Tagged document.txt", text: "3.1. Review this clause." } });
+  const id = created.data.id;
+  const organized = await api(`documents/${id}/organization`, { method: "PATCH", body: { folder: "Legal", tags: ["review", "review", "2026"], favorite: true } });
+  assert.equal(organized.response.status, 200);
+  assert.equal(organized.data.folder, "Legal"); assert.deepEqual(organized.data.tags, ["review", "2026"]); assert.equal(organized.data.version, 1);
+  assert.equal((await api(`documents/${id}/shares`, { method: "POST", body: { email: "employee@kt.kz", permission: "commenter" } })).response.status, 201);
+  const shared = await api(`documents/${id}`, { session: otherCookie });
+  assert.equal(shared.data.folder, ""); assert.equal(shared.data.favorite, false); assert.deepEqual(shared.data.tags, []);
+  assert.equal((await api(`documents/${id}/comments`, { method: "POST", body: { text: "Check this", clause: "3.1", version: 1 } })).response.status, 201);
+  assert.equal((await api(`documents/${id}/comments`, { method: "POST", body: { text: "Invalid", clause: "9.9", version: 1 } })).response.status, 400);
+  assert.equal((await api(`documents/${id}/organization`, { method: "PATCH", body: { tags: ["x".repeat(33)] } })).response.status, 400);
+});
+
+test("Word and PDF exports round-trip Kazakh text and reject invalid files", async () => {
+  const text = "ҚАЗАҚША ҚҰЖАТ\n1.1. Ә Ғ Қ Ң Ө Ұ Ү Һ І — Русский and English.";
+  for (const format of ["docx", "pdf"]) {
+    const response = await fetch(`${base}/api/files/export`, { method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" }, body: JSON.stringify({ format, title: "Тексеру.txt", text }) });
+    assert.equal(response.status, 200);
+    const bytes = await response.arrayBuffer();
+    assert.equal(new TextDecoder().decode(bytes.slice(0, format === "pdf" ? 4 : 2)), format === "pdf" ? "%PDF" : "PK");
+    const form = new FormData(); form.set("file", new File([bytes], `test.${format}`));
+    const parsed = await fetch(`${base}/api/files/parse`, { method: "POST", headers: { Cookie: cookie }, body: form });
+    assert.equal(parsed.status, 200); const data = await parsed.json(); assert.match(data.text, /ҚАЗАҚША ҚҰЖАТ/); assert.match(data.text, /Ә Ғ Қ Ң Ө Ұ Ү Һ І/);
+  }
+  assert.equal((await api("files/export", { method: "POST", session: "", body: { format: "pdf", text, title: "test" } })).response.status, 401);
+  const form = new FormData(); form.set("file", new File(["invalid"], "test.pdf"));
+  assert.equal((await fetch(`${base}/api/files/parse`, { method: "POST", headers: { Cookie: cookie }, body: form })).status, 422);
+});
+
+test("profile avatar and organization persist without allowing role escalation", async () => {
+  const avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+  const result = await api("auth/profile", { method: "PATCH", body: { name: "Profile Test", avatar, company: "Test company", position: "Reviewer", role: "admin" } });
+  assert.equal(result.response.status, 200); assert.equal(result.data.user.role, "user"); assert.equal(result.data.user.avatar, avatar); assert.equal(result.data.user.company, "Test company");
+  assert.equal((await api("auth/me")).data.user.avatar, avatar);
+  assert.equal((await api("auth/profile", { method: "PATCH", body: { name: "Profile Test", avatar: "data:image/svg+xml;base64,PHN2Zz4=" } })).response.status, 400);
+});
+
+test("password changes check the current password and revoke other sessions", async () => {
+  const login = await api("auth/login", { method: "POST", session: "", headers: { "x-forwarded-for": "198.51.100.211" }, body: { email: "user@kt.kz", password: "User12345" } });
+  assert.equal(login.response.status, 200);
+  const extra = login.response.headers.get("set-cookie").split(";")[0];
+  assert.equal((await api("auth/password", { method: "POST", body: { currentPassword: "Wrong12345", password: "Changed12345" } })).response.status, 400);
+  assert.equal((await api("auth/password", { method: "POST", body: { currentPassword: "User12345", password: "Changed12345" } })).response.status, 200);
+  assert.equal((await api("auth/me", { session: extra })).data.user, null);
+  assert.ok((await api("auth/me")).data.user);
+});

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Icon, { type IconName } from "./Icon";
 import LanguageSelect from "./LanguageSelect";
@@ -9,18 +9,20 @@ import { roleKey } from "../lib/i18n";
 import { button } from "./styles";
 import type { Tab, WorkspaceProps } from "./workspace-context";
 const icons: Record<Tab, IconName> = { dashboard: "home", compare: "compare", documents: "file", templates: "template", editor: "edit", history: "history", users: "users", company: "company", approvals: "shield", profile: "settings" };
+const desktopSubscribe = (callback: () => void) => { const media = window.matchMedia("(min-width: 1280px)"); media.addEventListener("change", callback); return () => media.removeEventListener("change", callback); };
 export default function AppHeader({ props }: { props: WorkspaceProps }) {
+  const desktop = useSyncExternalStore(desktopSubscribe, () => window.matchMedia("(min-width: 1280px)").matches, () => true);
   const { tr } = useLanguage(); const { theme, setTheme } = useTheme();
   const [menu, setMenu] = useState(false); const trigger = useRef<HTMLButtonElement>(null); const sidebar = useRef<HTMLElement>(null);
   const { tab, nav, setTab, sessionUser, setOpenTemplate, logout, setAuthMode, workspaces, activeWorkspaceId, setActiveWorkspaceId } = props;
-  useEffect(() => { if (!menu) return; const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; sidebar.current?.querySelector<HTMLButtonElement>("button")?.focus(); const key = (event: KeyboardEvent) => {
+  useEffect(() => { if (!menu || desktop) return; const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; sidebar.current?.querySelector<HTMLButtonElement>("button")?.focus(); const key = (event: KeyboardEvent) => {
     if (event.key === "Escape") { setMenu(false); trigger.current?.focus(); }
     if (event.key === "Tab") { const nodes = sidebar.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled),select"); if (!nodes?.length) return; const first = nodes[0], last = nodes[nodes.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
-  }; window.addEventListener("keydown", key); return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", key); }; }, [menu]);
+  }; window.addEventListener("keydown", key); return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", key); }; }, [menu, desktop]);
   function go(id: Tab) { setTab(id); setOpenTemplate(null); setMenu(false); }
   return <>
     {menu && <button className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm xl:hidden" aria-label={tr("Мәзірді жабу")} onClick={() => { setMenu(false); trigger.current?.focus(); }} />}
-    <aside ref={sidebar} aria-label={tr("Негізгі навигация")} className={`sidebar fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white p-5 transition-transform duration-200 xl:translate-x-0 ${menu ? "translate-x-0" : "-translate-x-full"}`}>
+    <aside inert={!menu && !desktop} role={!desktop && menu ? "dialog" : undefined} aria-modal={!desktop && menu ? true : undefined} ref={sidebar} aria-label={tr("Негізгі навигация")} className={`sidebar fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white p-5 transition-transform duration-200 xl:translate-x-0 ${menu ? "translate-x-0" : "-translate-x-full"}`}>
       <div className="mb-8 flex items-center justify-between"><button className="flex items-center gap-3 text-left" onClick={() => go("dashboard")}><span className="flex size-10 items-center justify-center rounded-2xl bg-blue-600 text-lg font-bold text-white shadow-lg shadow-blue-600/20">KT</span><span><b className="block">Neural Agent</b><span className="text-[10px] font-semibold uppercase tracking-[.18em] text-slate-400">Document workspace</span></span></button><button className="rounded-lg p-1 xl:hidden" aria-label={tr("Мәзірді жабу")} onClick={() => { setMenu(false); trigger.current?.focus(); }}><Icon name="close" /></button></div>
       <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{tr("Жұмыс кеңістігі")}</p>
       <nav className="flex-1 space-y-1 overflow-y-auto">{nav.filter(([id]) => id !== "users" || sessionUser?.role === "admin").map(([id, label]) => <button key={id} onClick={() => go(id)} aria-current={tab === id ? "page" : undefined} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium ${tab === id ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:bg-slate-50"}`}><Icon name={icons[id]} /><span>{label}</span>{tab === id && <span className="ml-auto size-1.5 rounded-full bg-blue-600"/>}</button>)}</nav>

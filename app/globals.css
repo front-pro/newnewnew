@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@font-face { font-family: "Noto Sans"; src: url("/fonts/NotoSans-Regular.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: swap; }
 
 :root {
   --background: #ffffff;
@@ -15,7 +16,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: "Segoe UI", Arial, sans-serif;
+  font-family: "Noto Sans", "Segoe UI", Arial, sans-serif;
 }
 
 .workspace-shell {
@@ -73,3 +74,8 @@ button { transition: background-color 140ms, color 140ms, box-shadow 140ms; }
 html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="off"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media print { header, nav, aside, footer, .toast, .no-print { display: none !important; } .app-content { margin: 0 !important; } .print-document { box-shadow: none !important; border: 0 !important; color: black !important; background: white !important; } }
+
+html.dark [class~="bg-amber-50"] { background-color: #342c18 !important; }
+html.dark [class~="text-amber-900"], html.dark [class~="text-amber-700"] { color: #fcd34d !important; }
+html.dark [class~="text-emerald-900"] { color: #a7f3d0 !important; }
+html.dark [class~="text-rose-900"] { color: #fecdd3 !important; }
