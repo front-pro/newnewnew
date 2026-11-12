@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentUser, publicUser, readStore, withStoreLock, writeStore } from "../_lib";
+import { appendAuditEvent, consumeAuthRateLimit, cookieHeader, currentUser, hashPassword, publicUser, readStore, safeHashEqual, sessionUserId, withStoreLock, writeStore } from "../_lib";
 
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status });
 
@@ -32,3 +32,64 @@ async function patch(request: Request) {
   }
 }
 export const PATCH = (request: Request) => withStoreLock(() => patch(request));
+
+async function removeAccount(request: Request) {
+  try {
+    const store = await readStore();
+    const user = await currentUser(request, store);
+    if (!user) return json({ error: "Жүйеге кіріңіз" }, 401);
+    const limit = await consumeAuthRateLimit(request, user.email, 5, 15 * 60 * 1000, "delete-account");
+    if (limit.limited) return NextResponse.json({ error: "Қайталау әрекеті тым көп. Кейінірек көріңіз." }, { status: 429, headers: { "Retry-After": String(limit.retryAfter) } });
+    let body: unknown;
+    try { body = await request.json(); } catch { return json({ error: "Сұрау пішімі қате" }, 400); }
+    if (!body || typeof body !== "object" || typeof (body as { password?: unknown }).password !== "string" || (body as { password: string }).password.length > 1024) return json({ error: "Құпиясөзді енгізіңіз" }, 400);
+    if (!safeHashEqual(hashPassword((body as { password: string }).password, user.salt), user.hash)) return json({ error: "Құпиясөз қате" }, 400);
+
+    const owned = store.workspaces.filter(workspace => workspace.ownerId === user.id);
+    const memberships = store.memberships.filter(item => item.userId === user.id);
+    const lastAdmin = memberships.some(item => item.role === "admin" && !store.memberships.some(other => other.workspaceId === item.workspaceId && other.userId !== user.id && other.role === "admin"));
+    if (lastAdmin) return json({ error: "Компанияда басқа әкімші жоқ. Аккаунтты жоймас бұрын әкімші рөлін басқа мүшеге беріңіз." }, 409);
+    const transfers = owned.map(workspace => ({ workspace, nextOwner: store.memberships.find(item => item.workspaceId === workspace.id && item.userId !== user.id && item.role === "admin") }));
+    if (transfers.some(item => !item.nextOwner)) return json({ error: "Компания иесісіз. Алдымен басқа мүшеге әкімші рөлін беріңіз." }, 409);
+    transfers.forEach(({ workspace, nextOwner }) => { workspace.ownerId = nextOwner!.userId; });
+
+    for (const document of store.documents) {
+      if (document.workspaceId && document.owner === user.email) {
+        const workspace = store.workspaces.find(item => item.id === document.workspaceId);
+        const replacement = store.users.find(item => item.id === workspace?.ownerId && item.id !== user.id);
+        document.owner = replacement?.email || "deleted-user";
+      }
+      document.shares = (document.shares || []).filter(share => share.email !== user.email);
+      document.comments = (document.comments || []).filter(comment => comment.author !== user.email);
+      if (document.organization) delete document.organization[user.id];
+    }
+    store.documents = store.documents.filter(document => document.owner !== user.email || !!document.workspaceId);
+    store.memberships = store.memberships.filter(item => item.userId !== user.id);
+    store.groups.forEach(group => { group.members = group.members.filter(id => id !== user.id); });
+    store.invitations = store.invitations.filter(item => item.invitedBy !== user.id);
+    store.approvals.forEach(flow => {
+      if (flow.requestedBy === user.id && flow.status === "pending") flow.status = "stale";
+      flow.steps = flow.steps.filter(step => step.approverId !== user.id);
+      if (flow.status === "pending" && flow.steps.length === 0) flow.status = "stale";
+    });
+    store.templates = store.templates.filter(template => template.owner !== user.email || template.owner === "system");
+    for (const [id, analysis] of Object.entries(store.analyses)) if (analysis.owner === user.email) delete store.analyses[id];
+    delete store.docs[user.email];
+    delete store.versions[user.email];
+    store.log = store.log.filter(item => item.owner !== user.email);
+    Object.keys(store.sessions).forEach(token => { if (sessionUserId(store.sessions[token]) === user.id) delete store.sessions[token]; });
+    Object.entries(store.verificationTokens).forEach(([token, item]) => { if (item.userId === user.id) delete store.verificationTokens[token]; });
+    Object.entries(store.passwordResetTokens).forEach(([token, item]) => { if (item.userId === user.id) delete store.passwordResetTokens[token]; });
+    store.users = store.users.filter(item => item.id !== user.id);
+    await writeStore(store);
+    await appendAuditEvent({ actorId: user.id, action: "account.delete", resourceType: "user", resourceId: user.id });
+    const response = json({ ok: true });
+    response.headers.set("Set-Cookie", cookieHeader(""));
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  } catch (error) {
+    return json({ error: error instanceof SyntaxError ? "JSON сұрауының форматы қате" : "Аккаунтты жою кезінде қате шықты" }, error instanceof SyntaxError ? 400 : 500);
+  }
+}
+
+export const DELETE = (request: Request) => withStoreLock(() => removeAccount(request));
