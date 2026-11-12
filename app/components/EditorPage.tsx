@@ -111,6 +111,16 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
     document.execCommand("insertHTML", false, `<table><tbody>${rows}</tbody></table><p><br></p>`);
     edit(area.current.innerHTML);
   }
+  function insertWorksheet() {
+    if (!area.current) return;
+    if (savedRange.current) { const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(savedRange.current); }
+    area.current.focus();
+    const columns = "ABCDEFGH".split("");
+    const header = `<tr><th><br></th>${columns.map(column => `<th>${column}</th>`).join("")}</tr>`;
+    const rows = Array.from({ length: 12 }, (_, index) => `<tr><th>${index + 1}</th>${columns.map(() => "<td><br></td>").join("")}</tr>`).join("");
+    document.execCommand("insertHTML", false, `<table><thead>${header}</thead><tbody>${rows}</tbody></table><p><br></p>`);
+    edit(area.current.innerHTML);
+  }
   function resizeImage(width: string) {
     const image = selectedImage.current;
     if (!image) { props.setNotice(tr("Өлшемін өзгерту үшін құжаттағы суретті таңдаңыз.")); return; }
@@ -134,6 +144,7 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
         {tools.map(([command, label, value]) => <button key={command} type="button" onMouseDown={event => { history.current.typing = false; toolbarClick(event, command, value); }} aria-label={tr(toolTitles[command])} title={tr(toolTitles[command])} className={`min-w-9 rounded-lg border border-slate-200 px-2 py-2 text-sm ${command === "bold" ? "font-bold" : command === "italic" ? "italic" : command === "underline" ? "underline" : ""}`}>{label}</button>)}
         <select aria-label={tr("Қаріп өлшемі")} defaultValue="3" onMouseDown={rememberSelection} onChange={event => format("fontSize", event.target.value)} className="rounded-lg border border-slate-200 bg-white p-2 text-xs">{[["2", "10"], ["3", "12"], ["4", "16"], ["5", "20"], ["6", "24"]].map(([size, label]) => <option key={size} value={size}>{label}</option>)}</select>
         <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={insertTable} className={`${button} gap-2 border border-slate-200 text-xs`}>{tr("4×4 кесте қосу")}</button>
+        <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={insertWorksheet} className={`${button} gap-2 border border-slate-200 text-xs`}>{tr("Excel торын қосу")}</button>
         <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={() => imageInput.current?.click()} className={`${button} gap-2 border border-slate-200 text-xs`}><Icon name="upload" className="size-4"/>{tr("Сурет қосу")}</button>
         <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif" className="hidden" onChange={event => { void insertImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <select aria-label={tr("Сурет өлшемі")} defaultValue="100" onChange={event => resizeImage(event.target.value)} className="rounded-lg border border-slate-200 bg-white p-2 text-xs"><option value="100">{tr("Сурет: толық")}</option><option value="75">75%</option><option value="50">50%</option><option value="25">25%</option></select>
