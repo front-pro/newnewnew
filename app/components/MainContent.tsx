@@ -17,7 +17,7 @@ export default function MainContent({ props }: { props: WorkspaceProps }) {
   const { tab, sessionUser, setNotice } = props;
   const { tr } = useLanguage();
 
-  return <main key={tab} className="mx-auto max-w-7xl page-enter space-y-6 px-4 py-7 md:px-8">
+  return <main key={tab} className={tab === "company" ? "page-enter" : "mx-auto max-w-7xl page-enter space-y-6 px-4 py-7 md:px-8"}>
     {tab === "dashboard" && <Dashboard key={sessionUser?.id || "guest"} props={props} />}
     {tab === "documents" && <DocumentsPage key={sessionUser?.id || "guest"} props={props} />}
     {tab === "company" && (props.activeWorkspaceId ? <CompanyWorkspacePage props={props} /> : <CompaniesPage user={sessionUser} setNotice={setNotice} onWorkspaceCreated={workspace => { props.setWorkspaces(current => [...current.filter(item => item.id !== workspace.id), workspace]); props.setActiveWorkspaceId(workspace.id); props.setTab("company"); }} />)}
