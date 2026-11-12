@@ -221,7 +221,15 @@ export async function handleDocuments(request: Request, path: string[], store: S
   }
 
   if (!path.length && method === "GET") {
-    return json(owned.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document, user.id), permission: permission(document) })));
+    const terms = (url.searchParams.get("q") || "").trim().slice(0, 120).toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const matching = owned.filter(document => {
+      if (!terms.length) return true;
+      const latest = document.versions.at(-1);
+      const organization = document.organization?.[user.id];
+      const searchable = [document.title, editorHtmlToText(latest?.text || ""), organization?.folder || "", ...(organization?.tags || [])].join("\n").toLocaleLowerCase();
+      return terms.every(term => searchable.includes(term));
+    });
+    return json(matching.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document, user.id), permission: permission(document) })));
   }
   if (path.length === 1 && path[0] === "me" && method === "GET") {
     const latest = owned.filter(document => document.owner === user.email).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];

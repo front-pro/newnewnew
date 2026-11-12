@@ -74,7 +74,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
         if (!sessionUser)
             return;
         const controller = new AbortController();
-        fetch(`/api/documents?workspaceId=${encodeURIComponent(workspaceScope || "")}`, { signal: controller.signal })
+        fetch(`/api/documents?workspaceId=${encodeURIComponent(workspaceScope || "")}&q=${encodeURIComponent(query.trim())}`, { signal: controller.signal })
             .then(async (response) => {
             const data = await response.json();
             if (!response.ok)
@@ -91,7 +91,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
                 setLoading(false);
         });
         return () => controller.abort();
-    }, [sessionUser, reload, tr, workspaceScope]);
+    }, [sessionUser, reload, tr, workspaceScope, query]);
     useEffect(() => {
         if (!sessionUser) return;
         const controller = new AbortController();
@@ -118,8 +118,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
     <p className="mx-auto mb-5 mt-2 max-w-md text-sm text-slate-500">{tr("Сақталған файлдар мен олардың нұсқаларын көру үшін жүйеге кіріңіз.")}</p>
     <button onClick={() => setAuthMode("login")} className={`${button} bg-blue-600 text-white`}>{tr("Жүйеге кіру")}</button>
   </section>;
-    const search = query.trim().toLocaleLowerCase();
-    const filtered = documents.filter(document => (!search || [document.title, document.folder || "", ...(document.tags || [])].join(" ").toLocaleLowerCase().includes(search)) && (folder === "all" || (document.folder || "") === folder) && (!favorites || document.favorite) &&
+    const filtered = documents.filter(document => (folder === "all" || (document.folder || "") === folder) && (!favorites || document.favorite) &&
         (source === "all" || document.source === source) &&
         (versions === "all" || (versions === "multiple" ? document.versionCount > 1 : document.versionCount === 1))).sort((a, b) => sort === "name" ? a.title.localeCompare(b.title, locale) : sort === "oldest" ? a.updatedAt.localeCompare(b.updatedAt) : b.updatedAt.localeCompare(a.updatedAt));
     const totalVersions = documents.reduce((sum, document) => sum + document.versionCount, 0);
@@ -321,7 +320,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
     <div className="flex flex-wrap items-center gap-3"><button onClick={() => setShowTrash(false)} aria-pressed={!showTrash} className={`${secondary} gap-2 ${!showTrash ? "bg-blue-50 text-blue-600" : ""}`}><Icon name="file" className="size-4"/>{tr("Құжаттар")}</button><button onClick={() => setShowTrash(true)} aria-pressed={showTrash} className={`${secondary} gap-2 ${showTrash ? "bg-blue-50 text-blue-600" : ""}`}><Icon name="trash" className="size-4"/>{tr("Себет")}<span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{trashDocuments.length}</span></button>{!showTrash && <><button onClick={() => setFavorites(!favorites)} aria-pressed={favorites} className={`${secondary} gap-2 ${favorites ? "bg-blue-50 text-blue-600" : ""}`}><Icon name="star" className="size-4"/>{tr("Таңдаулылар")}</button><label className="flex items-center gap-2 text-sm text-slate-500"><Icon name="folder" className="size-4"/>{tr("Қалта")}<select aria-label={tr("Қалта")} value={folder} onChange={e=>setFolder(e.target.value)} className="rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="all">{tr("Барлық қалталар")}</option><option value="">{tr("Қалтасыз")}</option>{[...new Set(documents.map(d=>d.folder).filter(Boolean))].sort().map(f=><option key={f} value={f}>{f}</option>)}</select></label></>}</div>
     {!showTrash && <section className={`${card} space-y-4`} aria-label={tr("Құжаттарды іздеу және сүзу")}>
       <div className="grid gap-3 md:grid-cols-[minmax(200px,1fr)_180px_180px_180px]">
-        <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Іздеу")}</span><input type="search" aria-label={tr("Құжат атауы бойынша іздеу")} placeholder={tr("Құжат атауын енгізіңіз…")} value={query} onChange={event => setQuery(event.target.value)} className={field}/></label>
+        <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Іздеу")}</span><input type="search" aria-label={tr("Құжат атауы немесе мәтіні бойынша іздеу")} placeholder={tr("Құжат атауын немесе мәтінін іздеу…")} maxLength={120} value={query} onChange={event => setQuery(event.target.value)} className={field}/></label>
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Дереккөз")}</span><select aria-label={tr("Дереккөз")} value={source} onChange={event => setSource(event.target.value)} className={field}><option value="all">{tr("Барлық құжаттар")}</option><option value="editor">{tr("Редактордан")}</option><option value="upload">{tr("Жүктелген файлдар")}</option></select></label>
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Нұсқалар")}</span><select aria-label={tr("Нұсқалар")} value={versions} onChange={event => setVersions(event.target.value)} className={field}><option value="all">{tr("Барлық нұсқалар")}</option><option value="single">{tr("Бір нұсқасы бар")}</option><option value="multiple">{tr("Бірнеше нұсқасы бар")}</option></select></label>
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Сұрыптау")}</span><select aria-label={tr("Сұрыптау")} value={sort} onChange={event => setSort(event.target.value)} className={field}><option value="recent">{tr("Жаңалары алдымен")}</option><option value="oldest">{tr("Ескілері алдымен")}</option><option value="name">{tr("Атауы бойынша")}</option></select></label>
