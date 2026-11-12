@@ -15,6 +15,8 @@ export type WorkspaceProps = {
   nav: [Tab, string][];
   tab: Tab;
   setTab: Dispatch<SetStateAction<Tab>>;
+  goBackTab: () => void;
+  canGoBack: boolean;
   workspaces: CompanyWorkspace[];
   setWorkspaces: Dispatch<SetStateAction<CompanyWorkspace[]>>;
   activeWorkspaceId: string | null;

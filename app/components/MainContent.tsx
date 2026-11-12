@@ -18,6 +18,7 @@ export default function MainContent({ props }: { props: WorkspaceProps }) {
   const { tr } = useLanguage();
 
   return <main key={tab} className={tab === "company" ? "page-enter" : "mx-auto max-w-7xl page-enter space-y-6 px-4 py-7 md:px-8"}>
+    {props.canGoBack && <button onClick={props.goBackTab} aria-label={tr("Артқа қайту")} title={tr("Артқа қайту")} className="group -ml-2 inline-flex size-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-blue-600 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><span className="text-xl leading-none transition-transform group-hover:-translate-x-0.5" aria-hidden="true">←</span></button>}
     {tab === "dashboard" && <Dashboard key={sessionUser?.id || "guest"} props={props} />}
     {tab === "documents" && <DocumentsPage key={sessionUser?.id || "guest"} props={props} />}
     {tab === "company" && (props.activeWorkspaceId ? <CompanyWorkspacePage props={props} /> : <CompaniesPage user={sessionUser} setNotice={setNotice} onWorkspaceCreated={workspace => { props.setWorkspaces(current => [...current.filter(item => item.id !== workspace.id), workspace]); props.setActiveWorkspaceId(workspace.id); props.setTab("company"); }} />)}

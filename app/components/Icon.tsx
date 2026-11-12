@@ -17,7 +17,7 @@ const paths = {
   undo: "m8 4-5 5 5 5M3 9h11a6 6 0 0 1 0 12", redo: "m16 4 5 5-5 5m5-5H10a6 6 0 0 0 0 12",
   folder: "M3 7V4h7l2 3h9v14H3V7Z", star: "m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 3-6Z",
   mail: "M3 5h18v14H3V5Zm0 0 9 8 9-8", settings: "M4 6h16M4 12h16M4 18h16M8 3v6m8 0v6m-8 0v6",
-  arrow: "M4 12h16m-6-6 6 6-6 6", loader: "M21 12a9 9 0 1 1-9-9", print: "M7 8V3h10v5M7 17H3V8h18v9h-4M7 13h10v8H7z",
+  arrow: "M4 12h16m-6-6 6 6-6 6", arrowLeft: "M20 12H4m6 6-6-6 6-6", loader: "M21 12a9 9 0 1 1-9-9", print: "M7 8V3h10v5M7 17H3V8h18v9h-4M7 13h10v8H7z",
 };
 export type IconName = keyof typeof paths;
 export default function Icon({ name, className = "size-5", ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
