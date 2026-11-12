@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { summarizeDocument } from "../lib/documents";
+import { editorHtmlToText, sanitizeEditorHtml } from "../lib/editor-content";
 import type { SavedDocument } from "../lib/documents";
 import { appendAuditEvent, currentUser, readStore, stamp, writeStore } from "./auth/_lib";
 import type { ApprovalFlow, Store, User } from "./auth/_lib";
@@ -215,9 +216,13 @@ export async function handleDocuments(request: Request, path: string[], store: S
     let body;
     try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
     if (!body || typeof body !== "object" || typeof body.text !== "string") return fail("Құжат мәтінін енгізіңіз");
-    const text: string = body.text;
+    const rawText: string = body.text;
+    if (rawText.length > 8_000_000) return fail("Құжат тым үлкен (макс. 8 МБ)", 413);
+    if (rawText.length > 200_000 && !/<img\b/i.test(rawText)) return fail("Құжат тым үлкен (макс. 200 000 таңба)", 413);
+    const text = sanitizeEditorHtml(rawText);
     const title = typeof body.title === "string" ? body.title.trim() : "Құжат.txt";
     if (!text.trim()) return fail("Құжат мәтіні бос");
+    if (editorHtmlToText(text).length > 200_000) return fail("Құжат мәтіні тым үлкен (макс. 200 000 таңба)", 413);
     if (text.length > 200000) return fail("Құжат тым үлкен (макс. 200 000 таңба)", 413);
     if (!title || title.length > 200) return fail("Атауы 1–200 таңба болуы керек");
     const existing = body.documentId ? owned.find(item => item.id === body.documentId && canEdit(item)) : undefined;

@@ -1,3 +1,5 @@
+import { editorHtmlToText } from "./editor-content";
+
 export type DocumentVersion = {
   version: number;
   title: string;
@@ -50,6 +52,6 @@ export function summarizeDocument(document: SavedDocument, userId?: string): Doc
     version: latest.version,
     versionCount: document.versions.length,
     size: new TextEncoder().encode(latest.text).length,
-    excerpt: latest.text.replace(/\s+/g, " ").slice(0, 160),
+    excerpt: editorHtmlToText(latest.text).replace(/\s+/g, " ").slice(0, 160),
   };
 }

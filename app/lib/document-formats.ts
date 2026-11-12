@@ -2,10 +2,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { Document, Packer, Paragraph, TextRun } from "docx";
+import { AlignmentType, Document, HeadingLevel, ImageRun, Packer, Paragraph, TextRun, type ParagraphChild } from "docx";
 import mammoth from "mammoth";
 import { unzipSync } from "fflate";
 import { recognizeScannedPages } from "./ocr";
+import { editorHtmlToText, sanitizeEditorHtml } from "./editor-content";
 
 export async function extractDocumentDetailed(buffer: Buffer, extension: string, signal?: AbortSignal) {
   let text: string;
@@ -50,13 +51,53 @@ export async function extractDocument(buffer: Buffer, extension: string) {
 }
 
 export async function exportDocument(format: "pdf" | "docx", title: string, text: string) {
-  if (format === "docx") return Packer.toBuffer(new Document({ sections: [{ children: text.split(/\r?\n/).map(line => new Paragraph({ children: [new TextRun({ text: line, font: "Arial", size: 24 })] })) }] }));
+  const html = sanitizeEditorHtml(text);
+  if (format === "docx") {
+    const paragraphs: Paragraph[] = [];
+    const tokens = html.match(/<[^>]+>|[^<]+/g) || [];
+    let runs: ParagraphChild[] = [];
+    const style = { bold: false, italics: false, underline: false, strike: false };
+    let runSize = 24;
+    let heading = 0;
+    let alignment: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.LEFT;
+    const finish = () => {
+      paragraphs.push(new Paragraph({ children: runs.length ? runs : [new TextRun("")], alignment, ...(heading ? { heading: heading === 1 ? HeadingLevel.HEADING_1 : heading === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3 } : {}) }));
+      runs = []; heading = 0; alignment = AlignmentType.LEFT;
+    };
+    for (const token of tokens) {
+      const tag = token.match(/^<(\/)?([a-z0-9]+)([^>]*)>$/i);
+      if (!tag) { if (token) runs.push(new TextRun({ text: decodeHtml(token), font: "Arial", size: runSize, bold: style.bold, italics: style.italics, underline: style.underline ? {} : undefined, strike: style.strike })); continue; }
+      const closing = !!tag[1], name = tag[2].toLowerCase();
+      if (!closing && /^h[1-3]$/.test(name)) heading = Number(name[1]);
+      if (!closing && name === "p") {
+        const align = tag[3].match(/text-align:(left|center|right|justify)/i)?.[1]?.toLowerCase();
+        if (align === "center") alignment = AlignmentType.CENTER; else if (align === "right") alignment = AlignmentType.RIGHT; else if (align === "justify") alignment = AlignmentType.BOTH;
+      }
+      if (name === "span") {
+        if (closing) runSize = 24;
+        else { const px = tag[3].match(/font-size:(\d{1,2})px/i)?.[1]; if (px) runSize = Math.round(Math.max(10, Math.min(48, Number(px))) * 1.5); }
+      }
+      if (!closing && name === "li") runs.push(new TextRun({ text: "• ", font: "Arial", size: 24 }));
+      if (name === "strong" || name === "b") style.bold = !closing;
+      if (name === "em" || name === "i") style.italics = !closing;
+      if (name === "u") style.underline = !closing;
+      if (name === "s") style.strike = !closing;
+      if (!closing && name === "img") {
+        const src = tag[3].match(/\bsrc="(data:image\/(png|jpeg|gif);base64,[^"]+)"/i);
+        if (src) { const kind = src[2].toLowerCase(); const data = Buffer.from(src[1].split(",")[1], "base64"); if (data.length <= 3_100_000) { const imageWidth = Number(tag[3].match(/\bwidth="(\d{1,4})"/i)?.[1] || 480), imageHeight = Number(tag[3].match(/\bheight="(\d{1,4})"/i)?.[1] || 320), scale = Math.min(1, 480 / imageWidth, 640 / imageHeight); runs.push(new ImageRun({ data, type: kind === "jpeg" ? "jpg" : kind as "png" | "gif", transformation: { width: Math.round(imageWidth * scale), height: Math.round(imageHeight * scale) }, altText: { description: "Құжатқа енгізілген сурет" } })); } }
+      }
+      if (closing && /^(p|div|li|h[1-3]|blockquote)$/.test(name)) finish();
+      if (name === "br" && !closing) finish();
+    }
+    if (runs.length || !paragraphs.length) finish();
+    return Packer.toBuffer(new Document({ sections: [{ children: paragraphs }] }));
+  }
   const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit); pdf.setTitle(title);
   const font = await pdf.embedFont(await readFile(path.join(process.cwd(), "public/fonts/NotoSans-Regular.ttf")), { subset: true });
   const width = 595.28, height = 841.89, margin = 48, size = 11, lineHeight = 17;
   let page = pdf.addPage([width, height]), y = height - margin;
   const line = (value: string) => { if (y < margin + lineHeight) { page = pdf.addPage([width, height]); y = height - margin; } page.drawText(value, { x: margin, y, size, font }); y -= lineHeight; };
-  for (const paragraph of text.replace(/\r\n/g, "\n").replace(/\t/g,"    ").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "").split("\n")) {
+  for (const paragraph of editorHtmlToText(html).replace(/\r\n/g, "\n").replace(/\t/g,"    ").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "").split("\n")) {
     if (!paragraph) { line(""); continue; }
     let current = "";
     for (const word of paragraph.split(/(\s+)/)) {
@@ -69,4 +110,8 @@ export async function exportDocument(format: "pdf" | "docx", title: string, text
   }
   pdf.getPages().forEach((p,i) => p.drawText(`${i + 1} / ${pdf.getPageCount()}`, { x: margin, y: 24, size: 8, font }));
   return Buffer.from(await pdf.save());
+}
+
+function decodeHtml(value: string) {
+  return value.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
