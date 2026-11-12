@@ -12,7 +12,8 @@ export type SavedDocument = {
   approvalId?: string;
   shares?: { email: string; permission: "viewer" | "commenter" | "editor" }[];
   groupShares?: { groupId: string; permission: "viewer" | "commenter" | "editor" }[];
-  comments?: { id: string; author: string; text: string; createdAt: string }[];
+  comments?: { id: string; author: string; text: string; createdAt: string; clause?: string; version?: number }[];
+  organization?: Record<string, { folder: string; tags: string[]; favorite: boolean }>;
   title: string;
   source: "editor" | "upload";
   createdAt: string;
@@ -21,6 +22,9 @@ export type SavedDocument = {
 };
 
 export type DocumentSummary = Pick<SavedDocument, "id" | "title" | "source" | "createdAt" | "updatedAt" | "workspaceId"> & {
+  folder: string;
+  tags: string[];
+  favorite: boolean;
   version: number;
   versionCount: number;
   size: number;
@@ -31,9 +35,12 @@ export type DocumentDetail = DocumentSummary & { versions: DocumentVersion[] };
 
 export type DocumentPermission = "owner" | "editor" | "commenter" | "viewer" | "none";
 
-export function summarizeDocument(document: SavedDocument): DocumentSummary {
+export function summarizeDocument(document: SavedDocument, userId?: string): DocumentSummary {
   const latest = document.versions[document.versions.length - 1];
   return {
+    folder: userId ? document.organization?.[userId]?.folder || "" : "",
+    tags: userId ? document.organization?.[userId]?.tags || [] : [],
+    favorite: userId ? document.organization?.[userId]?.favorite || false : false,
     id: document.id,
     title: document.title,
     source: document.source,

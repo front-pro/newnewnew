@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@font-face { font-family: "Noto Sans"; src: url("/fonts/NotoSans-Regular.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: swap; }
 
 :root {
   --background: #ffffff;
@@ -15,7 +16,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Noto Sans", "Segoe UI", Arial, sans-serif;
 }
 
 .workspace-shell {
@@ -56,3 +57,25 @@ html.dark [class~="border-rose-200"] { border-color: #713449 !important; }
 html.dark [class~="bg-violet-50"] { background-color: #28203f !important; }
 html.dark [class~="text-violet-700"] { color: #c4b5fd !important; }
 html.dark [class~="border-violet-200"] { border-color: #504078 !important; }
+
+/* Shared motion and interaction language. */
+@keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes panel-enter { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.page-enter { animation: enter 200ms ease-out both; }
+.toast, .version-panel { animation: panel-enter 180ms ease-out both; }
+.skeleton { background-image: linear-gradient(90deg, transparent, #94a3b820, transparent); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.interactive-card { transition: border-color 160ms, box-shadow 160ms, transform 160ms; }
+.interactive-card:hover { border-color: #93c5fd; box-shadow: 0 8px 28px #1e3a8a0b; transform: translateY(-2px); }
+button, a, input, select, summary { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid #3b82f6; outline-offset: 3px; }
+button:not(:disabled) { cursor: pointer; }
+button { transition: background-color 140ms, color 140ms, box-shadow 140ms; }
+html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="off"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@media print { header, nav, aside, footer, .toast, .no-print { display: none !important; } .app-content { margin: 0 !important; } .print-document { box-shadow: none !important; border: 0 !important; color: black !important; background: white !important; } }
+
+html.dark [class~="bg-amber-50"] { background-color: #342c18 !important; }
+html.dark [class~="text-amber-900"], html.dark [class~="text-amber-700"] { color: #fcd34d !important; }
+html.dark [class~="text-emerald-900"] { color: #a7f3d0 !important; }
+html.dark [class~="text-rose-900"] { color: #fecdd3 !important; }

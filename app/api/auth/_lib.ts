@@ -4,7 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { SavedDocument } from "../../lib/documents";
 
-export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; platformRole?: "operator"; avatar?: string; emailVerifiedAt?: string | null };
+export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; platformRole?: "operator"; avatar?: string; company?: string; position?: string; emailVerifiedAt?: string | null };
 export type SessionRecord = string | { id: string; userId: string; createdAt: string; expiresAt: string; userAgent: string };
 export type WorkspaceRole = "member" | "admin";
 export type Workspace = { id: string; name: string; ownerId: string; createdAt: string };
@@ -173,7 +173,7 @@ export async function deliverAuthEmail(to: string, subject: string, text: string
   const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" }, body: JSON.stringify({ to, subject, text }), signal: AbortSignal.timeout(8000), cache: "no-store" });
   return response.ok;
 }
-export const publicUser = ({ id, name, email, role, platformRole, avatar, emailVerifiedAt }: User) => ({ id, name, email, role, platformRole: platformRole || null, avatar: avatar || null, emailVerified: !!emailVerifiedAt });
+export const publicUser = ({ id, name, email, role, platformRole, avatar, company, position, emailVerifiedAt }: User) => ({ id, name, email, role, platformRole: platformRole || null, avatar: avatar || null, company: company || "", position: position || "", emailVerified: !!emailVerifiedAt });
 export const hashPassword = (password: string, salt: string) => scryptSync(password, salt, 64).toString("hex");
 export function safeHashEqual(left: string, right: string) { const a = Buffer.from(left, "hex"), b = Buffer.from(right, "hex"); return a.length === b.length && timingSafeEqual(a, b); }
 export const newToken = () => randomBytes(32).toString("hex");

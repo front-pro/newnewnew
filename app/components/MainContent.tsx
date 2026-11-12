@@ -2,10 +2,11 @@
 
 import { useLanguage } from "./LanguageProvider";
 import AccountPage from "./AccountPage";
+import AnalysisPage from "./AnalysisPage";
 import ApprovalInbox from "./ApprovalInbox";
-import ComparePage from "./ComparePage";
 import CompaniesPage from "./CompaniesPage";
 import CompanyWorkspacePage from "./CompanyWorkspacePage";
+import Dashboard from "./Dashboard";
 import DocumentsPage from "./DocumentsPage";
 import EditorPage from "./EditorPage";
 import HistoryPage from "./HistoryPage";
@@ -13,19 +14,21 @@ import TemplatesPage from "./TemplatesPage";
 import type { WorkspaceProps } from "./workspace-context";
 
 export default function MainContent({ props }: { props: WorkspaceProps }) {
+  const { tab, sessionUser, setNotice } = props;
   const { tr } = useLanguage();
-  const { tab, notice, setNotice, sessionUser } = props;
 
-  return <main className="mx-auto max-w-7xl space-y-6 px-4 py-7 md:px-8">
-    {notice && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{notice}<button onClick={() => setNotice("")} className="float-right font-bold" aria-label={tr("Хабарламаны жабу")}>×</button></div>}
-
-    {tab === "compare" && <ComparePage props={props} />}
+  return <main key={tab} className="mx-auto max-w-7xl page-enter space-y-6 px-4 py-7 md:px-8">
+    {tab === "dashboard" && <Dashboard key={sessionUser?.id || "guest"} props={props} />}
     {tab === "documents" && <DocumentsPage key={sessionUser?.id || "guest"} props={props} />}
     {tab === "company" && (props.activeWorkspaceId ? <CompanyWorkspacePage props={props} /> : <CompaniesPage user={sessionUser} setNotice={setNotice} onWorkspaceCreated={workspace => { props.setWorkspaces(current => [...current.filter(item => item.id !== workspace.id), workspace]); props.setActiveWorkspaceId(workspace.id); props.setTab("company"); }} />)}
+    {tab === "compare" && <AnalysisPage props={props} />}
     {tab === "templates" && <TemplatesPage props={props} />}
-    {tab === "editor" && <EditorPage props={props} />}
-    {tab === "history" && (sessionUser ? <HistoryPage history={props.history} /> : <AccountPage props={props} />)}
+    {tab === "editor" && sessionUser && <EditorPage key={`${props.documentId || "new"}-${props.editorKey}`} props={props} />}
+    {tab === "editor" && !sessionUser && <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><h1 className="text-xl font-bold">{tr("Редактор жабық")}</h1><p className="my-2 text-sm text-slate-500">{tr("Құжаттарды өңдеу және сақтау үшін жүйеге кіріңіз.")}</p><button onClick={() => props.setAuthMode("login")} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{tr("Кіру")}</button></section>}
+    {tab === "history" && sessionUser && <HistoryPage history={props.history} />}
+    {tab === "history" && !sessionUser && <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><h1 className="text-xl font-bold">{tr("Тарих қолжетімсіз")}</h1><p className="my-2 text-sm text-slate-500">{tr("Тарихты сақтау үшін жүйеге кіріңіз.")}</p><button onClick={() => props.setAuthMode("login")} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{tr("Кіру")}</button></section>}
     {tab === "approvals" && sessionUser && <ApprovalInbox setNotice={setNotice} />}
-    {tab === "users" && <AccountPage props={props} />}
+    {tab === "profile" && <AccountPage props={props} />}
+    {tab === "users" && <AccountPage props={props} mode="users" />}
   </main>;
 }
