@@ -12,6 +12,7 @@ export type SavedDocument = {
   owner: string;
   workspaceId?: string;
   approvalId?: string;
+  deletedAt?: string;
   shares?: { email: string; permission: "viewer" | "commenter" | "editor" }[];
   groupShares?: { groupId: string; permission: "viewer" | "commenter" | "editor" }[];
   comments?: { id: string; author: string; text: string; createdAt: string; clause?: string; version?: number }[];

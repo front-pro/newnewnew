@@ -15,6 +15,7 @@ const extension = (title: string) => title.includes(".") ? title.split(".").pop(
 type Comment = { id: string; author: string; text: string; createdAt: string; clause?: string; version?: number };
 type ApprovalView = { id: string; version: number; status: string; steps: { email: string; decision: string; reason?: string }[] };
 type SharedDocument = DocumentDetail & { permission?: "owner" | "editor" | "commenter" | "viewer"; shares?: { email: string; permission: "viewer" | "commenter" | "editor" }[]; groupShares?: { groupId: string; name: string; permission: "viewer" | "commenter" | "editor" }[]; approvalId?: string; approval?: ApprovalView };
+type TrashedDocument = DocumentSummary & { deletedAt: string };
 export default function DocumentsPage({ props, workspaceScope }: {
     props: WorkspaceProps;
     workspaceScope?: string | null;
@@ -24,6 +25,8 @@ export default function DocumentsPage({ props, workspaceScope }: {
     const size = (bytes: number) => `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / 1024)} ${tr("КБ")}`;
     const { sessionUser, setAuthMode, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, downloadText, setNotice } = props;
     const [documents, setDocuments] = useState<DocumentSummary[]>([]);
+    const [trashDocuments, setTrashDocuments] = useState<TrashedDocument[]>([]);
+    const [showTrash, setShowTrash] = useState(false);
     const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
     const [targetWorkspace, setTargetWorkspace] = useState("");
     const [loading, setLoading] = useState(true);
@@ -87,6 +90,16 @@ export default function DocumentsPage({ props, workspaceScope }: {
             if (!controller.signal.aborted)
                 setLoading(false);
         });
+        return () => controller.abort();
+    }, [sessionUser, reload, tr, workspaceScope]);
+    useEffect(() => {
+        if (!sessionUser) return;
+        const controller = new AbortController();
+        fetch(`/api/documents/trash?workspaceId=${encodeURIComponent(workspaceScope || "")}`, { cache: "no-store", signal: controller.signal }).then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || tr("Себетті жүктеу мүмкін болмады."));
+            setTrashDocuments(data);
+        }).catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? tr(error.message) : tr("Желі қатесі.")); });
         return () => controller.abort();
     }, [sessionUser, reload, tr, workspaceScope]);
     useEffect(() => {
@@ -178,6 +191,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
             if (!response.ok)
                 throw new Error(data.error);
             setDocuments(current => current.filter(item => item.id !== document.id));
+            setTrashDocuments(current => [{ ...document, deletedAt: new Date().toISOString() }, ...current]);
             if (selected?.id === document.id)
                 setSelected(null);
             onDocumentDeleted(document.id);
@@ -190,6 +204,19 @@ export default function DocumentsPage({ props, workspaceScope }: {
         finally {
             setOpeningId(null);
         }
+    }
+    async function restoreDocument(document: TrashedDocument) {
+      setOpeningId(document.id);
+      try { const response = await fetch(`/api/documents/${encodeURIComponent(document.id)}/restore`, { method: "POST" }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setTrashDocuments(current => current.filter(item => item.id !== document.id)); setDocuments(current => [data, ...current]); setNotice(tr("«{p0}» қалпына келтірілді.", { p0: document.title })); }
+      catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Құжатты қалпына келтіру мүмкін болмады.")); }
+      finally { setOpeningId(null); }
+    }
+    async function permanentlyDeleteDocument(document: TrashedDocument) {
+      if (!window.confirm(tr("«{p0}» құжатын біржола жоясыз ба? Бұл әрекетті қайтару мүмкін емес.", { p0: document.title }))) return;
+      setOpeningId(document.id);
+      try { const response = await fetch(`/api/documents/${encodeURIComponent(document.id)}/permanent`, { method: "DELETE" }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setTrashDocuments(current => current.filter(item => item.id !== document.id)); setNotice(tr("Құжат біржола жойылды.")); }
+      catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Құжатты біржола жою мүмкін болмады.")); }
+      finally { setOpeningId(null); }
     }
     async function addComment() {
         if (!selected || !commentText.trim()) return;
@@ -278,8 +305,8 @@ export default function DocumentsPage({ props, workspaceScope }: {
       {[[tr("Барлық құжаттар"), documents.length, "▤", "bg-blue-50 text-blue-600"], [tr("Сақталған нұсқалар"), totalVersions, "↻", "bg-violet-50 text-violet-600"], [tr("Жүктелген файлдар"), documents.filter(document => document.source === "upload").length, "↑", "bg-emerald-50 text-emerald-600"]].map(([label, value, icon, tone]) => <div key={String(label)} className={`${card} flex items-center gap-4`}><span aria-hidden="true" className={`flex size-11 shrink-0 items-center justify-center rounded-xl text-xl ${tone}`}>{icon}</span><div><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold">{loading || error ? "—" : value}</p></div></div>)}
     </div>
 
-    <div className="flex flex-wrap items-center gap-3"><button onClick={() => setFavorites(!favorites)} aria-pressed={favorites} className={`${secondary} gap-2 ${favorites ? "bg-blue-50 text-blue-600" : ""}`}><Icon name="star" className="size-4"/>{tr("Таңдаулылар")}</button><label className="flex items-center gap-2 text-sm text-slate-500"><Icon name="folder" className="size-4"/>{tr("Қалта")}<select aria-label={tr("Қалта")} value={folder} onChange={e=>setFolder(e.target.value)} className="rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="all">{tr("Барлық қалталар")}</option><option value="">{tr("Қалтасыз")}</option>{[...new Set(documents.map(d=>d.folder).filter(Boolean))].sort().map(f=><option key={f} value={f}>{f}</option>)}</select></label></div>
-    <section className={`${card} space-y-4`} aria-label={tr("Құжаттарды іздеу және сүзу")}>
+    <div className="flex flex-wrap items-center gap-3"><button onClick={() => setShowTrash(false)} aria-pressed={!showTrash} className={`${secondary} gap-2 ${!showTrash ? "bg-blue-50 text-blue-600" : ""}`}><Icon name="file" className="size-4"/>{tr("Құжаттар")}</button><button onClick={() => setShowTrash(true)} aria-pressed={showTrash} className={`${secondary} gap-2 ${showTrash ? "bg-blue-50 text-blue-600" : ""}`}><Icon name="trash" className="size-4"/>{tr("Себет")}<span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{trashDocuments.length}</span></button>{!showTrash && <><button onClick={() => setFavorites(!favorites)} aria-pressed={favorites} className={`${secondary} gap-2 ${favorites ? "bg-blue-50 text-blue-600" : ""}`}><Icon name="star" className="size-4"/>{tr("Таңдаулылар")}</button><label className="flex items-center gap-2 text-sm text-slate-500"><Icon name="folder" className="size-4"/>{tr("Қалта")}<select aria-label={tr("Қалта")} value={folder} onChange={e=>setFolder(e.target.value)} className="rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="all">{tr("Барлық қалталар")}</option><option value="">{tr("Қалтасыз")}</option>{[...new Set(documents.map(d=>d.folder).filter(Boolean))].sort().map(f=><option key={f} value={f}>{f}</option>)}</select></label></>}</div>
+    {!showTrash && <section className={`${card} space-y-4`} aria-label={tr("Құжаттарды іздеу және сүзу")}>
       <div className="grid gap-3 md:grid-cols-[minmax(200px,1fr)_180px_180px_180px]">
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Іздеу")}</span><input type="search" aria-label={tr("Құжат атауы бойынша іздеу")} placeholder={tr("Құжат атауын енгізіңіз…")} value={query} onChange={event => setQuery(event.target.value)} className={field}/></label>
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Дереккөз")}</span><select aria-label={tr("Дереккөз")} value={source} onChange={event => setSource(event.target.value)} className={field}><option value="all">{tr("Барлық құжаттар")}</option><option value="editor">{tr("Редактордан")}</option><option value="upload">{tr("Жүктелген файлдар")}</option></select></label>
@@ -287,22 +314,22 @@ export default function DocumentsPage({ props, workspaceScope }: {
         <label><span className="mb-1.5 block text-xs font-medium text-slate-500">{tr("Сұрыптау")}</span><select aria-label={tr("Сұрыптау")} value={sort} onChange={event => setSort(event.target.value)} className={field}><option value="recent">{tr("Жаңалары алдымен")}</option><option value="oldest">{tr("Ескілері алдымен")}</option><option value="name">{tr("Атауы бойынша")}</option></select></label>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><p role="status">{loading ? tr("Құжаттар жүктелуде…") : tr("{p0} / {p1} құжат", { p0: filtered.length, p1: documents.length })}</p>{hasFilters ? <button onClick={resetFilters} className="font-semibold text-blue-600 hover:underline">{tr("Сүзгілерді тазалау \u00D7")}</button> : <p>{tr("PDF, DOCX және мәтіндік файлдар · 10 МБ дейін")}</p>}</div>
-    </section>
+    </section>}
 
     <div className={`grid items-start gap-5 ${selected ? "xl:grid-cols-[minmax(0,1fr)_360px]" : ""}`}>
-      <section className={`${card} overflow-hidden p-0`} aria-label={tr("Сақталған құжаттар")} aria-busy={loading}>
-        {loading ? <Skeleton /> : error ? <div role="alert" className="space-y-3 p-10 text-center"><p className="text-sm text-rose-600">{tr(error)}</p><button onClick={() => { setLoading(true); setReload(value => value + 1); }} className={secondary}>{tr("Қайта жүктеу")}</button></div> : !filtered.length ? <div className="px-5 py-16 text-center">
+      <section className={`${card} overflow-hidden p-0`} aria-label={tr(showTrash ? "Себет" : "Сақталған құжаттар")} aria-busy={loading}>
+        {loading ? <Skeleton /> : error ? <div role="alert" className="space-y-3 p-10 text-center"><p className="text-sm text-rose-600">{tr(error)}</p><button onClick={() => { setLoading(true); setReload(value => value + 1); }} className={secondary}>{tr("Қайта жүктеу")}</button></div> : (showTrash ? !trashDocuments.length : !filtered.length) ? <div className="px-5 py-16 text-center">
           <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-slate-50 text-3xl text-slate-400" aria-hidden="true">▤</div>
-          <h2 className="text-lg font-semibold">{hasFilters ? tr("Құжаттар табылмады") : tr("Алғашқы құжатыңызды қосыңыз")}</h2>
-          <p className="mx-auto mb-5 mt-2 max-w-sm text-sm text-slate-500">{hasFilters ? tr("Іздеу сөзін өзгертіңіз немесе сүзгілерді тазалаңыз.") : tr("Редакторда құжат жасаңыз немесе мәтіндік файл жүктеңіз. Барлық нұсқалар осында сақталады.")}</p>
-          <button onClick={hasFilters ? resetFilters : () => newDocument(workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined)} className={`${button} bg-blue-50 text-blue-700`}>{hasFilters ? tr("Сүзгілерді тазалау") : tr("\uFF0B Құжат жасау")}</button>
+          <h2 className="text-lg font-semibold">{showTrash ? tr("Себет бос") : hasFilters ? tr("Құжаттар табылмады") : tr("Алғашқы құжатыңызды қосыңыз")}</h2>
+          <p className="mx-auto mb-5 mt-2 max-w-sm text-sm text-slate-500">{showTrash ? tr("Жойылған құжаттар осында көрсетіледі.") : hasFilters ? tr("Іздеу сөзін өзгертіңіз немесе сүзгілерді тазалаңыз.") : tr("Редакторда құжат жасаңыз немесе мәтіндік файл жүктеңіз. Барлық нұсқалар осында сақталады.")}</p>
+          {!showTrash && <button onClick={hasFilters ? resetFilters : () => newDocument(workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined)} className={`${button} bg-blue-50 text-blue-700`}>{hasFilters ? tr("Сүзгілерді тазалау") : tr("\uFF0B Құжат жасау")}</button>}
         </div> : <>
-          <div className="hidden grid-cols-[minmax(0,1fr)_120px_160px_160px] gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-medium text-slate-500 lg:grid"><span>{tr("Құжат атауы")}</span><span>{tr("Нұсқа")}</span><span>{tr("Жаңартылған күні")}</span><span className="text-right">{tr("Әрекеттер")}</span></div>
-          <ul className="divide-y divide-slate-100">{filtered.map(document => <li key={document.id} className={`grid items-center gap-3 px-5 py-4 transition hover:bg-slate-50/70 lg:grid-cols-[minmax(0,1fr)_120px_160px_160px] ${selected?.id === document.id ? "bg-blue-50/60" : ""}`}>
-            <div className="flex min-w-0 items-center gap-3"><button aria-label={tr(document.favorite ? "Таңдаулылардан алып тастау" : "Таңдаулыларға қосу")} aria-pressed={!!document.favorite} onClick={()=>void organize(document,{favorite:!document.favorite})} className={document.favorite ? "text-amber-500" : "text-slate-300 hover:text-amber-500"}><Icon name="star" className="size-4" fill={document.favorite ? "currentColor" : "none"}/></button><span className="flex h-12 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 font-mono text-[10px] font-bold text-blue-600" aria-hidden="true">{extension(document.title)}</span><div className="min-w-0"><button onClick={() => showDocument(document)} disabled={openingId !== null} className="block max-w-full truncate text-left text-sm font-semibold text-slate-800 hover:text-blue-600" title={document.title}>{document.title}</button><p className="mt-1 text-xs text-slate-400">{document.source === "upload" ? tr("Жүктелген файл") : tr("Редактордан")} · {size(document.size)}</p></div></div>
+          <div className="hidden grid-cols-[minmax(0,1fr)_120px_160px_220px] gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-medium text-slate-500 lg:grid"><span>{tr("Құжат атауы")}</span><span>{tr("Нұсқа")}</span><span>{tr(showTrash ? "Жойылған күні" : "Жаңартылған күні")}</span><span className="text-right">{tr("Әрекеттер")}</span></div>
+          <ul className="divide-y divide-slate-100">{(showTrash ? trashDocuments : filtered).map(document => <li key={document.id} className={`grid items-center gap-3 px-5 py-4 transition hover:bg-slate-50/70 lg:grid-cols-[minmax(0,1fr)_120px_160px_220px] ${selected?.id === document.id ? "bg-blue-50/60" : ""}`}>
+            <div className="flex min-w-0 items-center gap-3">{!showTrash && <button aria-label={tr(document.favorite ? "Таңдаулылардан алып тастау" : "Таңдаулыларға қосу")} aria-pressed={!!document.favorite} onClick={()=>void organize(document,{favorite:!document.favorite})} className={document.favorite ? "text-amber-500" : "text-slate-300 hover:text-amber-500"}><Icon name="star" className="size-4" fill={document.favorite ? "currentColor" : "none"}/></button>}<span className="flex h-12 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 font-mono text-[10px] font-bold text-blue-600" aria-hidden="true">{extension(document.title)}</span><div className="min-w-0">{showTrash ? <span className="block max-w-full truncate text-sm font-semibold text-slate-800" title={document.title}>{document.title}</span> : <button onClick={() => showDocument(document)} disabled={openingId !== null} className="block max-w-full truncate text-left text-sm font-semibold text-slate-800 hover:text-blue-600" title={document.title}>{document.title}</button>}<p className="mt-1 text-xs text-slate-400">{document.source === "upload" ? tr("Жүктелген файл") : tr("Редактордан")} · {size(document.size)}</p></div></div>
             <div><span className="inline-flex rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-blue-700">v{document.version}</span><span className="ml-2 text-xs text-slate-400">{tr("{count} нұсқа", { count: document.versionCount })}</span></div>
-            <time dateTime={document.updatedAt || undefined} className="text-xs leading-5 text-slate-500">{date(document.updatedAt)}</time>
-            <div className="flex gap-2 lg:justify-end"><button onClick={() => showDocument(document)} disabled={openingId !== null} className={`${button} border border-slate-200 bg-white px-3 text-xs text-slate-600`}>{openingId === document.id ? "…" : tr("Нұсқалар")}</button><button onClick={() => showDocument(document, true)} disabled={openingId !== null} className={`${button} bg-blue-50 px-3 text-xs text-blue-700`}>{tr("Ашу")}</button></div>
+            <time dateTime={(showTrash ? (document as TrashedDocument).deletedAt : document.updatedAt) || undefined} className="text-xs leading-5 text-slate-500">{date(showTrash ? (document as TrashedDocument).deletedAt : document.updatedAt)}</time>
+            {showTrash ? <div className="flex flex-wrap gap-2 lg:justify-end"><button onClick={() => void restoreDocument(document as TrashedDocument)} disabled={openingId !== null} className={`${button} border border-emerald-200 bg-emerald-50 px-3 text-xs text-emerald-700`}>{tr("Қалпына келтіру")}</button><button onClick={() => void permanentlyDeleteDocument(document as TrashedDocument)} disabled={openingId !== null} className={`${button} border border-rose-200 bg-white px-3 text-xs text-rose-600`}>{tr("Біржола жою")}</button></div> : <div className="flex flex-wrap gap-2 lg:justify-end"><button onClick={() => showDocument(document)} disabled={openingId !== null} className={`${button} border border-slate-200 bg-white px-3 text-xs text-slate-600`}>{openingId === document.id ? "…" : tr("Нұсқалар")}</button><button onClick={() => showDocument(document, true)} disabled={openingId !== null} className={`${button} bg-blue-50 px-3 text-xs text-blue-700`}>{tr("Ашу")}</button>{(document as DocumentSummary & { permission?: string }).permission === "owner" && <button onClick={() => void deleteDocument(document)} disabled={openingId !== null} aria-label={`${tr("Себетке жіберу")}: ${document.title}`} title={tr("Себетке жіберу")} className={`${button} border border-rose-200 bg-white px-3 text-xs text-rose-600 hover:bg-rose-50`}><Icon name="trash" className="size-4"/><span>{tr("Жою")}</span></button>}</div>}
           </li>)}</ul>
         </>}
       </section>
