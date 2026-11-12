@@ -91,7 +91,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
       delete document.approvalId;
     }
     store.docs[document.owner] = restored.text; store.versions[document.owner] = restored.version;
-    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, meta: `${stamp()} · v${restored.version} · v${versionNumber} нұсқасынан қалпына келтірілді` });
+    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, documentId: document.id, meta: `${stamp()} · v${restored.version} · v${versionNumber} нұсқасынан қалпына келтірілді` });
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.restore_version", resourceType: "document", resourceId: document.id, metadata: { restoredFrom: versionNumber, version: restored.version } });
     const approval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId) : undefined;
@@ -207,7 +207,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
       store.docs[user.email] = snapshot.text;
       store.versions[user.email] = snapshot.version;
     } else { delete store.docs[user.email]; delete store.versions[user.email]; }
-    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, meta: `${stamp()} · жойылды` });
+    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, documentId: document.id, meta: `${stamp()} · жойылды` });
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.delete", resourceType: "document", resourceId: document.id, metadata: { title: document.title } });
     return json({ ok: true });
@@ -259,7 +259,7 @@ export async function handleDocuments(request: Request, path: string[], store: S
     // Retain compatibility with the previous editor endpoint.
     store.docs[user.email] = text;
     store.versions[user.email] = version;
-    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title, meta: `${stamp()} · v${version}` });
+    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title, documentId: document.id, meta: `${stamp()} · v${version}` });
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: existing ? "document.update" : "document.create", resourceType: "document", resourceId: document.id, metadata: { version } });
     return json({ ...summarizeDocument(document, user.id), permission: permission(document), shares: document.shares || [], versions: document.versions }, existing ? 200 : 201);

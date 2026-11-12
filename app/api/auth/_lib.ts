@@ -18,7 +18,7 @@ export type AuditEventInput = { workspaceId?: string | null; actorId: string | n
 type LegacyDocument = { id: string; title: string; text: string; updatedAt: string; version: number };
 export type Store = {
   users: User[]; sessions: Record<string, SessionRecord>; verificationTokens: Record<string, { userId: string; expiresAt: string }>; passwordResetTokens: Record<string, { userId: string; expiresAt: string }>; approvals: ApprovalFlow[]; workspaces: Workspace[]; memberships: WorkspaceMembership[]; invitations: WorkspaceInvitation[]; groups: WorkspaceGroup[]; templates: Template[]; analyses: Record<string, { owner: string; result: Record<string, unknown> }>;
-  docs: Record<string, string>; versions: Record<string, number>; documents: SavedDocument[]; log: { owner: string; type: string; tone: string; title: string; meta: string }[]; nextId: number;
+  docs: Record<string, string>; versions: Record<string, number>; documents: SavedDocument[]; log: { owner: string; type: string; tone: string; title: string; meta: string; documentId?: string }[]; nextId: number;
 };
 const dataDirectory = process.env.KT_AGENT_DATA_DIR || path.join(process.cwd(), ".data");
 const pathToStore = path.join(dataDirectory, "agent.json");

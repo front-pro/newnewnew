@@ -25,7 +25,7 @@ export default function MainContent({ props }: { props: WorkspaceProps }) {
     {tab === "templates" && <TemplatesPage props={props} />}
     {tab === "editor" && sessionUser && <EditorPage key={`${props.documentId || "new"}-${props.editorKey}`} props={props} />}
     {tab === "editor" && !sessionUser && <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><h1 className="text-xl font-bold">{tr("Редактор жабық")}</h1><p className="my-2 text-sm text-slate-500">{tr("Құжаттарды өңдеу және сақтау үшін жүйеге кіріңіз.")}</p><button onClick={() => props.setAuthMode("login")} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{tr("Кіру")}</button></section>}
-    {tab === "history" && sessionUser && <HistoryPage history={props.history} />}
+    {tab === "history" && sessionUser && <HistoryPage props={props} />}
     {tab === "history" && !sessionUser && <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><h1 className="text-xl font-bold">{tr("Тарих қолжетімсіз")}</h1><p className="my-2 text-sm text-slate-500">{tr("Тарихты сақтау үшін жүйеге кіріңіз.")}</p><button onClick={() => props.setAuthMode("login")} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{tr("Кіру")}</button></section>}
     {tab === "approvals" && sessionUser && <ApprovalInbox setNotice={setNotice} />}
     {tab === "profile" && <AccountPage props={props} />}

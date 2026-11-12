@@ -43,6 +43,12 @@ async function handle(request: Request) {
       if (user) { store.analyses[String(id)] = { owner: user.email, result }; store.log.push({ owner: user.email, type: "ЖИ талдауы", tone: "blue", title: `Салыстыру #${id}`, meta: `${stamp()} · ${(result as ReturnType<typeof compare>).metrics.total} өзгеріс анықталды` }); await writeStore(store); }
       return json(result);
     }
+    if (path[0] === "analysis" && path[1] && path.length === 2 && method === "GET") {
+      if (!user) return fail("Жүйеге кіріңіз", 401);
+      const record = store.analyses[path[1]];
+      if (!record || record.owner !== user.email) return fail("Талдау табылмады", 404);
+      return json(record.result);
+    }
     if (path[0] === "analysis" && path[1] && path[2] === "export" && method === "GET") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
       const record = store.analyses[path[1]];
