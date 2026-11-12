@@ -69,6 +69,22 @@ export async function handleDocuments(request: Request, path: string[], store: S
     return json(summarizeDocument(document, user.id));
   }
 
+  if (path.length === 2 && path[1] === "metadata" && method === "PATCH") {
+    const document = owned.find(item => item.id === path[0] && canEdit(item));
+    if (!document) return fail("Құжат табылмады", 404);
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    if (!body || typeof body !== "object" || !("dueDate" in body)) return fail("Сұрау пішімі қате");
+    const dueDate = body.dueDate;
+    const parsedDate = typeof dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? new Date(`${dueDate}T00:00:00.000Z`) : null;
+    if (dueDate !== null && (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dueDate)) {
+      return fail("Мерзім күнін дұрыс енгізіңіз");
+    }
+    document.dueDate = dueDate || undefined;
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.deadline_update", resourceType: "document", resourceId: document.id, metadata: { dueDate: document.dueDate || null } });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document) });
+  }
   if (path.length === 2 && path[1] === "approval" && method === "POST") {
     const document = owned.find(item => item.id === path[0] && canEdit(item));
     if (!document) return fail("Құжат табылмады", 404);

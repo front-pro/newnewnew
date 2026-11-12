@@ -11,6 +11,7 @@ export type SavedDocument = {
   id: string;
   owner: string;
   workspaceId?: string;
+  dueDate?: string;
   approvalId?: string;
   deletedAt?: string;
   shares?: { email: string; permission: "viewer" | "commenter" | "editor" }[];
@@ -24,7 +25,7 @@ export type SavedDocument = {
   versions: DocumentVersion[];
 };
 
-export type DocumentSummary = Pick<SavedDocument, "id" | "title" | "source" | "createdAt" | "updatedAt" | "workspaceId"> & {
+export type DocumentSummary = Pick<SavedDocument, "id" | "title" | "source" | "createdAt" | "updatedAt" | "workspaceId" | "dueDate"> & {
   folder: string;
   tags: string[];
   favorite: boolean;
@@ -48,6 +49,7 @@ export function summarizeDocument(document: SavedDocument, userId?: string): Doc
     title: document.title,
     source: document.source,
     workspaceId: document.workspaceId,
+    dueDate: document.dueDate,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     version: latest.version,
@@ -55,4 +57,15 @@ export function summarizeDocument(document: SavedDocument, userId?: string): Doc
     size: new TextEncoder().encode(latest.text).length,
     excerpt: editorHtmlToText(latest.text).replace(/\s+/g, " ").slice(0, 160),
   };
+}
+
+export type DocumentDeadlineStatus = "overdue" | "today" | "soon" | "later";
+
+export function getDocumentDeadlineStatus(dueDate?: string, today = new Date().toISOString().slice(0, 10)): DocumentDeadlineStatus | null {
+  if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return null;
+  const due = Date.parse(`${dueDate}T00:00:00Z`);
+  const current = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(due) || !Number.isFinite(current) || new Date(due).toISOString().slice(0, 10) !== dueDate) return null;
+  const days = Math.round((due - current) / 86_400_000);
+  return days < 0 ? "overdue" : days === 0 ? "today" : days <= 30 ? "soon" : "later";
 }
