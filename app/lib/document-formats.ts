@@ -8,6 +8,24 @@ import { unzipSync } from "fflate";
 import { recognizeScannedPages } from "./ocr";
 import { editorHtmlToText, sanitizeEditorHtml } from "./editor-content";
 
+
+const xmlDecode = (v: string) => v.replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&apos;/g,"'");
+const htmlEscape = (v: string) => v.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]!));
+const xmlText = (v: string) => xmlDecode(v.replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim());
+function zipOffice(buffer: Buffer) { let total=0; return unzipSync(buffer,{filter(entry){total+=entry.originalSize;if(total>20*1024*1024)throw new Error("Құжат мазмұны тым үлкен");return true;}}); }
+function colIndex(ref:string) { const letters=ref.match(/^[A-Z]+/i)?.[0]?.toUpperCase()||"A";return [...letters].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0)-1; }
+function rowsHtml(rows:string[][],title?:string) { if(!rows.length)return "";const prefix=title?"<h2>"+htmlEscape(title)+"</h2>":"";return prefix+"<table><tbody>"+rows.map((row,i)=>"<tr>"+row.map(cell=>i===0?"<th>"+htmlEscape(cell)+"</th>":"<td>"+htmlEscape(cell)+"</td>").join("")+"</tr>").join("")+"</tbody></table>"; }
+function xlsxHtml(files:Record<string,Uint8Array>) {
+ const shared=[...(new TextDecoder().decode(files["xl/sharedStrings.xml"]||new Uint8Array()).matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g))].map(m=>[...m[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(t=>xmlText(t[1])).join(""));
+ const sheets=Object.keys(files).filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort((a,b)=>Number(a.match(/sheet(\d+)/)?.[1])-Number(b.match(/sheet(\d+)/)?.[1])).slice(0,10);
+ return sheets.map((name,index)=>{const xml=new TextDecoder().decode(files[name]),rows:string[][]=[];for(const rm of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)){const row:string[]=[];for(const cm of rm[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){const attrs=cm[1],body=cm[2]||"",ref=attrs.match(/\br="([A-Z]+\d+)"/i)?.[1]||"",idx=ref?colIndex(ref):row.length;if(idx>49)continue;const type=attrs.match(/\bt="([^"]+)"/)?.[1],value=body.match(/<v>([\s\S]*?)<\/v>/)?.[1]||"",formula=body.match(/<f[^>]*>([\s\S]*?)<\/f>/)?.[1];let text=type==="s"?shared[Number(xmlText(value))]||"":type==="inlineStr"?[...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(t=>xmlText(t[1])).join(""):xmlText(value);if(!text&&formula)text="="+xmlText(formula);row[idx]=text;}if(row.length)rows.push(Array.from({length:Math.min(50,row.length)},(_,i)=>row[i]||""));if(rows.length>=500)break;}return rowsHtml(rows,"Sheet "+(index+1));}).join("");
+}
+function odsHtml(files:Record<string,Uint8Array>) {
+ const xml=files["content.xml"]?new TextDecoder().decode(files["content.xml"]):"",tables=[...xml.matchAll(/<table:table\b[^>]*>([\s\S]*?)<\/table:table>/g)].slice(0,10);
+ return tables.map((tm,index)=>{const rows:string[][]=[];for(const rm of tm[1].matchAll(/<table:table-row\b[^>]*>([\s\S]*?)<\/table:table-row>/g)){const row:string[]=[];for(const cm of rm[1].matchAll(/<table:table-cell\b([^>]*?)(?:\/>|>([\s\S]*?)<\/table:table-cell>)/g)){const repeat=Math.max(1,Math.min(50,Number(cm[1].match(/table:number-columns-repeated="(\d+)"/)?.[1]||1)),p=cm[2]?.match(/<text:p\b[^>]*>([\s\S]*?)<\/text:p>/)?.[1],value=p?xmlText(p):cm[1].match(/office:value="([^"]+)"/)?.[1]||"";for(let i=0;i<repeat&&row.length<50;i++)row.push(value);}if(row.length)rows.push(row);if(rows.length>=500)break;}return rowsHtml(rows,"Sheet "+(index+1));}).join("");
+}
+function officeXmlText(files:Record<string,Uint8Array>,ext:string) { const names=Object.keys(files).filter(n=>ext==="pptx"?/^ppt\/slides\/slide\d+\.xml$/.test(n):n==="content.xml").sort();return names.slice(0,100).map(n=>[...new TextDecoder().decode(files[n]).matchAll(/<(?:a:t|text:p|w:t)\b[^>]*>([\s\S]*?)<\/(?:a:t|text:p|w:t)>/g)].map(m=>xmlText(m[1])).filter(Boolean).map(t=>"<p>"+htmlEscape(t)+"</p>").join("")).join(""); }
+
 export async function extractDocumentDetailed(buffer: Buffer, extension: string, signal?: AbortSignal) {
   let text: string;
   let ocrPages = 0;
@@ -36,12 +54,21 @@ export async function extractDocumentDetailed(buffer: Buffer, extension: string,
       text = result.pages.map(page => recognized.get(page.num) || page.text).join("\n\n");
     } finally { await parser.destroy(); }
   } else if (extension === "docx") {
-    let total = 0;
-    const files = unzipSync(buffer, { filter(entry) { total += entry.originalSize; if (total > 20 * 1024 * 1024) throw new Error("DOCX мазмұны тым үлкен"); return entry.name === "word/document.xml"; } });
+    const files = zipOffice(buffer);
     if (!files["word/document.xml"]) throw new Error("DOCX файлының пішімі қате");
-    text = (await mammoth.extractRawText({ buffer })).value;
-  } else throw new Error("Тек PDF және DOCX қолдайды");
-  if (!text.trim()) throw new Error("Файлдан мәтін табылмады. Скан сапасын тексеріңіз.");
+    text = (await mammoth.convertToHtml({ buffer })).value;
+  } else if (extension === "xlsx") {
+    const files = zipOffice(buffer);
+    if (!files["xl/workbook.xml"]) throw new Error("XLSX файлының пішімі қате");
+    text = xlsxHtml(files);
+  } else if (extension === "ods") {
+    const files = zipOffice(buffer);
+    if (!files["content.xml"]) throw new Error("ODS файлының пішімі қате");
+    text = odsHtml(files);
+  } else if (["pptx", "odt", "odp"].includes(extension)) {
+    text = officeXmlText(zipOffice(buffer), extension);
+  } else throw new Error("Қолдау көрсетілетін форматтар: PDF, DOCX, XLSX, ODS, PPTX, ODT, ODP");
+  if (!text.trim() || !editorHtmlToText(text).trim()) throw new Error("Файлдан оқылатын мәтін табылмады.");
   if (text.length > 200000) throw new Error("Құжат тым үлкен (макс. 200 000 таңба)");
   return { text, ocrPages };
 }
