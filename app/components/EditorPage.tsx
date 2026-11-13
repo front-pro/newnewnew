@@ -76,7 +76,7 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
     }
     if (!found) props.setNotice(tr("Мәтін табылмады"));
   }
-  async function exportFile(format: "pdf" | "docx") {
+  async function exportFile(format: "pdf" | "docx" | "xlsx") {
     setExporting(true);
     try { await downloadDocument(format, props.editorTitle, sanitizeEditorHtml(props.editorText)); }
     catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Экспорт орындалмады")); }
@@ -102,6 +102,25 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
     };
     reader.readAsDataURL(file);
   }
+  function insertTable() {
+    if (!area.current) return;
+    if (savedRange.current) { const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(savedRange.current); }
+    area.current.focus();
+    const cells = Array.from({ length: 4 }, () => "<td><br></td>").join("");
+    const rows = Array.from({ length: 4 }, () => `<tr>${cells}</tr>`).join("");
+    document.execCommand("insertHTML", false, `<table><tbody>${rows}</tbody></table><p><br></p>`);
+    edit(area.current.innerHTML);
+  }
+  function insertWorksheet() {
+    if (!area.current) return;
+    if (savedRange.current) { const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(savedRange.current); }
+    area.current.focus();
+    const columns = "ABCDEFGH".split("");
+    const header = `<tr><th><br></th>${columns.map(column => `<th>${column}</th>`).join("")}</tr>`;
+    const rows = Array.from({ length: 12 }, (_, index) => `<tr><th>${index + 1}</th>${columns.map(() => "<td><br></td>").join("")}</tr>`).join("");
+    document.execCommand("insertHTML", false, `<table><thead>${header}</thead><tbody>${rows}</tbody></table><p><br></p>`);
+    edit(area.current.innerHTML);
+  }
   function resizeImage(width: string) {
     const image = selectedImage.current;
     if (!image) { props.setNotice(tr("Өлшемін өзгерту үшін құжаттағы суретті таңдаңыз.")); return; }
@@ -124,15 +143,17 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
         <span className="mx-1 h-7 w-px bg-slate-200"/>
         {tools.map(([command, label, value]) => <button key={command} type="button" onMouseDown={event => { history.current.typing = false; toolbarClick(event, command, value); }} aria-label={tr(toolTitles[command])} title={tr(toolTitles[command])} className={`min-w-9 rounded-lg border border-slate-200 px-2 py-2 text-sm ${command === "bold" ? "font-bold" : command === "italic" ? "italic" : command === "underline" ? "underline" : ""}`}>{label}</button>)}
         <select aria-label={tr("Қаріп өлшемі")} defaultValue="3" onMouseDown={rememberSelection} onChange={event => format("fontSize", event.target.value)} className="rounded-lg border border-slate-200 bg-white p-2 text-xs">{[["2", "10"], ["3", "12"], ["4", "16"], ["5", "20"], ["6", "24"]].map(([size, label]) => <option key={size} value={size}>{label}</option>)}</select>
+        <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={insertTable} className={`${button} gap-2 border border-slate-200 text-xs`}>{tr("4×4 кесте қосу")}</button>
+        <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={insertWorksheet} className={`${button} gap-2 border border-slate-200 text-xs`}>{tr("Excel торын қосу")}</button>
         <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={() => imageInput.current?.click()} className={`${button} gap-2 border border-slate-200 text-xs`}><Icon name="upload" className="size-4"/>{tr("Сурет қосу")}</button>
         <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif" className="hidden" onChange={event => { void insertImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <select aria-label={tr("Сурет өлшемі")} defaultValue="100" onChange={event => resizeImage(event.target.value)} className="rounded-lg border border-slate-200 bg-white p-2 text-xs"><option value="100">{tr("Сурет: толық")}</option><option value="75">75%</option><option value="50">50%</option><option value="25">25%</option></select>
         <form onSubmit={find} className="ml-auto flex min-w-0 gap-1"><input aria-label={tr("Мәтіннен іздеу")} placeholder={tr("Мәтіннен іздеу")} value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 max-w-40 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"/><button aria-label={tr("Келесісін табу")} className="rounded-lg border border-slate-200 p-2"><Icon name="search" className="size-4"/></button></form>
-        <div className="flex gap-2">{(["docx", "pdf"] as const).map(format => <button key={format} disabled={exporting || !plainText} onClick={() => void exportFile(format)} className={`${button} gap-2 border border-slate-200 text-xs`}>{exporting && <Icon name="loader" className="size-3 animate-spin"/>}{format.toUpperCase()}</button>)}</div>
+        <div className="flex gap-2">{(["docx", "pdf", "xlsx"] as const).map(format => <button key={format} disabled={exporting || !plainText} onClick={() => void exportFile(format)} className={`${button} gap-2 border border-slate-200 text-xs`}>{exporting && <Icon name="loader" className="size-3 animate-spin"/>}{format.toUpperCase()}</button>)}</div>
       </div>
     </section>
 
-    <div className="overflow-x-auto rounded-xl bg-slate-200 p-3 sm:p-6"><div className="mx-auto min-h-[1056px] w-full max-w-[794px] rounded-sm bg-white px-8 py-12 shadow-lg sm:px-20 sm:py-20"><div className="mb-8 flex items-center justify-between border-b border-slate-100 pb-3 text-[10px] uppercase tracking-wider text-slate-400"><span>{tr("Құжат парағы")}</span><span>{preferences.autosave ? tr("Жоба браузерде сақталады") : tr("Автосақтау өшірілген")}</span></div><div ref={node => { area.current = node; if (node && !initialized.current) { node.innerHTML = initialHtml; initialized.current = true; } }} contentEditable={!props.editorBusy} suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label={tr("Құжат мәтіні")} onInput={event => edit(event.currentTarget.innerHTML, true)} onClick={event => { const target = event.target; selectedImage.current = target instanceof HTMLImageElement ? target : null; rememberSelection(); }} onKeyUp={() => { selectedImage.current = window.getSelection()?.anchorNode?.parentElement?.closest("img") || null; rememberSelection(); }} style={{ fontSize: preferences.fontSize }} className="min-h-[850px] whitespace-pre-wrap break-words font-sans leading-8 text-slate-800 outline-none empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)] [&_h1]:my-4 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:my-3 [&_h2]:text-2xl [&_h2]:font-semibold [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-6 [&_ol]:list-decimal [&_ul]:list-disc" data-placeholder={tr("Мәтінді теріңіз немесе құралдар тақтасынан сурет қосыңыз…")}/><div className="mt-12 flex justify-between border-t border-slate-100 pt-3 text-xs text-slate-400"><span>{words.toLocaleString()} {tr("сөз")} · {plainText.length.toLocaleString()} {tr("таңба")}</span><span>{tr("Жеке кабинет")}</span></div></div></div>
+    <div className="overflow-x-auto rounded-xl bg-slate-200 p-3 sm:p-6"><div className="mx-auto min-h-[1056px] w-full max-w-[794px] rounded-sm bg-white px-8 py-12 shadow-lg sm:px-20 sm:py-20"><div className="mb-8 flex items-center justify-between border-b border-slate-100 pb-3 text-[10px] uppercase tracking-wider text-slate-400"><span>{tr("Құжат парағы")}</span><span>{preferences.autosave ? tr("Жоба браузерде сақталады") : tr("Автосақтау өшірілген")}</span></div><div ref={node => { area.current = node; if (node && !initialized.current) { node.innerHTML = initialHtml; initialized.current = true; } }} contentEditable={!props.editorBusy} suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label={tr("Құжат мәтіні")} onInput={event => edit(event.currentTarget.innerHTML, true)} onClick={event => { const target = event.target; selectedImage.current = target instanceof HTMLImageElement ? target : null; rememberSelection(); }} onKeyUp={() => { selectedImage.current = window.getSelection()?.anchorNode?.parentElement?.closest("img") || null; rememberSelection(); }} style={{ fontSize: preferences.fontSize }} className="document-editor min-h-[850px] whitespace-pre-wrap break-words font-sans leading-8 text-slate-800 outline-none empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)] [&_h1]:my-4 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:my-3 [&_h2]:text-2xl [&_h2]:font-semibold [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-6 [&_ol]:list-decimal [&_ul]:list-disc" data-placeholder={tr("Мәтінді теріңіз немесе құралдар тақтасынан сурет қосыңыз…")}/><div className="mt-12 flex justify-between border-t border-slate-100 pt-3 text-xs text-slate-400"><span>{words.toLocaleString()} {tr("сөз")} · {plainText.length.toLocaleString()} {tr("таңба")}</span><span>{tr("Жеке кабинет")}</span></div></div></div>
     <div className="mx-auto w-full max-w-[820px]"><FileDropzone disabled={props.editorBusy} onRead={(text, name, pages) => { props.newDocument(); props.setEditorText(text); props.setEditorTitle(name); if (pages) props.setNotice(tr("OCR мәтінді таныды. Нәтижені түпнұсқамен салыстырып тексеріңіз.")); }} onError={props.setNotice}/></div>
   </div>;
 }

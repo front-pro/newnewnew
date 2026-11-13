@@ -1,4 +1,4 @@
-const allowedTags = new Set(["p", "div", "br", "strong", "b", "em", "i", "u", "s", "ul", "ol", "li", "h1", "h2", "h3", "blockquote", "span", "font", "img"]);
+const allowedTags = new Set(["p", "div", "br", "strong", "b", "em", "i", "u", "s", "ul", "ol", "li", "h1", "h2", "h3", "blockquote", "span", "font", "img", "table", "thead", "tbody", "tfoot", "tr", "td", "th"]);
 const decodeEntities = (value: string) => value.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Math.min(0x10ffff, Number(code)))).replace(/&#x([\da-f]+);/gi, (_, code: string) => String.fromCodePoint(Math.min(0x10ffff, parseInt(code, 16))));
 
 export function sanitizeEditorHtml(value: string) {
@@ -8,6 +8,7 @@ export function sanitizeEditorHtml(value: string) {
     if (!allowedTags.has(tag)) return "";
     if (closing) return tag === "br" || tag === "img" ? "" : tag === "font" ? "</span>" : `</${tag}>`;
     if (tag === "br") return "<br>";
+    if (["table", "thead", "tbody", "tfoot", "tr", "td", "th"].includes(tag)) return closing ? `</${tag}>` : `<${tag}>`;
     if (tag === "img") {
       const src = rawAttrs.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
       const alt = rawAttrs.match(/\balt\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
@@ -29,10 +30,10 @@ export function sanitizeEditorHtml(value: string) {
 }
 
 export function editorHtmlFromText(value: string) {
-  if (/<(?:p|div|br|strong|b|em|i|u|s|ul|ol|li|h[1-3]|blockquote|img)\b/i.test(value)) return sanitizeEditorHtml(value);
+  if (/<(?:p|div|br|strong|b|em|i|u|s|ul|ol|li|h[1-3]|blockquote|img|table|tr|td|th)\b/i.test(value)) return sanitizeEditorHtml(value);
   return value.split(/\r?\n/).map(line => line ? `<p>${line.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!)}</p>` : "<p><br></p>").join("");
 }
 
 export function editorHtmlToText(value: string) {
-  return decodeEntities(value.replace(/<img\b[^>]*\balt\s*=\s*(["'])(.*?)\1[^>]*>/gi, " $2 ").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(?:p|div|li|h[1-3]|blockquote)>/gi, "\n").replace(/<[^>]*>/g, "")).replace(/[\t ]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return decodeEntities(value.replace(/<img\b[^>]*\balt\s*=\s*(["'])(.*?)\1[^>]*>/gi, " $2 ").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(?:td|th)>/gi, "\t").replace(/<\/tr\s*>/gi, "\n").replace(/<\/(?:p|div|li|h[1-3]|blockquote|table)>/gi, "\n").replace(/<[^>]*>/g, "")).replace(/[\t ]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }

@@ -19,6 +19,7 @@ export async function handleDocumentRequest(request: Request, path: string[]) {
 export async function handleDocuments(request: Request, path: string[], store: Store, user: User | null, workspaceScope?: string | null) {
   if (!user) return fail("Жүйеге кіріңіз", 401);
   const method = request.method;
+  const url = new URL(request.url);
   const permission = (document: SavedDocument): "owner" | "editor" | "commenter" | "viewer" | "none" => {
     if (document.workspaceId) {
       const isMember = store.memberships.some(item => item.workspaceId === document.workspaceId && item.userId === user.id);
@@ -69,6 +70,22 @@ export async function handleDocuments(request: Request, path: string[], store: S
     return json(summarizeDocument(document, user.id));
   }
 
+  if (path.length === 2 && path[1] === "metadata" && method === "PATCH") {
+    const document = owned.find(item => item.id === path[0] && canEdit(item));
+    if (!document) return fail("Құжат табылмады", 404);
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    if (!body || typeof body !== "object" || !("dueDate" in body)) return fail("Сұрау пішімі қате");
+    const dueDate = body.dueDate;
+    const parsedDate = typeof dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? new Date(`${dueDate}T00:00:00.000Z`) : null;
+    if (dueDate !== null && (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dueDate)) {
+      return fail("Мерзім күнін дұрыс енгізіңіз");
+    }
+    document.dueDate = dueDate || undefined;
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.deadline_update", resourceType: "document", resourceId: document.id, metadata: { dueDate: document.dueDate || null } });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document) });
+  }
   if (path.length === 2 && path[1] === "approval" && method === "POST") {
     const document = owned.find(item => item.id === path[0] && canEdit(item));
     if (!document) return fail("Құжат табылмады", 404);
@@ -205,7 +222,15 @@ export async function handleDocuments(request: Request, path: string[], store: S
   }
 
   if (!path.length && method === "GET") {
-    return json(owned.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document, user.id), permission: permission(document) })));
+    const terms = (url.searchParams.get("q") || "").trim().slice(0, 120).toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const matching = owned.filter(document => {
+      if (!terms.length) return true;
+      const latest = document.versions.at(-1);
+      const organization = document.organization?.[user.id];
+      const searchable = [document.title, editorHtmlToText(latest?.text || ""), organization?.folder || "", ...(organization?.tags || [])].join("\n").toLocaleLowerCase();
+      return terms.every(term => searchable.includes(term));
+    });
+    return json(matching.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document, user.id), permission: permission(document) })));
   }
   if (path.length === 1 && path[0] === "me" && method === "GET") {
     const latest = owned.filter(document => document.owner === user.email).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
