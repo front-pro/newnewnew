@@ -11,7 +11,9 @@ import { editorHtmlToText, sanitizeEditorHtml } from "./editor-content";
 export async function extractDocumentDetailed(buffer: Buffer, extension: string, signal?: AbortSignal) {
   let text: string;
   let ocrPages = 0;
-  if (extension === "pdf") {
+  if (extension === "xlsx") {
+    text = extractXlsxText(buffer);
+  } else if (extension === "pdf") {
     if (!buffer.subarray(0, 1024).includes(Buffer.from("%PDF-"))) throw new Error("PDF файлының пішімі қате");
     const { PDFParse } = await import("pdf-parse");
     const parser = new PDFParse({ data: new Uint8Array(buffer), isEvalSupported: false });
@@ -40,10 +42,36 @@ export async function extractDocumentDetailed(buffer: Buffer, extension: string,
     const files = unzipSync(buffer, { filter(entry) { total += entry.originalSize; if (total > 20 * 1024 * 1024) throw new Error("DOCX мазмұны тым үлкен"); return entry.name === "word/document.xml"; } });
     if (!files["word/document.xml"]) throw new Error("DOCX файлының пішімі қате");
     text = (await mammoth.extractRawText({ buffer })).value;
-  } else throw new Error("Тек PDF және DOCX қолдайды");
+  } else throw new Error("PDF, DOCX және XLSX файлдары қолдайды");
   if (!text.trim()) throw new Error("Файлдан мәтін табылмады. Скан сапасын тексеріңіз.");
   if (text.length > 200000) throw new Error("Құжат тым үлкен (макс. 200 000 таңба)");
   return { text, ocrPages };
+}
+
+function extractXlsxText(buffer: Buffer) {
+  let files: Record<string, Uint8Array>;
+  let total = 0;
+  try { files = unzipSync(buffer, { filter: entry => { total += entry.originalSize; if (total > 20 * 1024 * 1024) throw new Error("XLSX мазмұны тым үлкен"); return true; } }); }
+  catch { throw new Error("XLSX файлының пішімі қате немесе мазмұны тым үлкен"); }
+  const xml = (name: string) => files[name] ? new TextDecoder().decode(files[name]) : "";
+  const decode = (value: string) => value.replace(/&#x([\da-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16))).replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code))).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+  const strings = [...xml("xl/sharedStrings.xml").matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)].map(match => [...match[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(part => decode(part[1])).join(""));
+  const sheets = Object.keys(files).filter(name => /^xl\/worksheets\/sheet\d+\.xml$/.test(name)).sort((a, b) => Number(a.match(/sheet(\d+)/)?.[1]) - Number(b.match(/sheet(\d+)/)?.[1]));
+  if (!sheets.length) throw new Error("XLSX файлында парақ табылмады");
+  const columnIndex = (ref: string) => { let n = 0; for (const char of ref.match(/^[A-Z]+/i)?.[0]?.toUpperCase() || "") n = n * 26 + char.charCodeAt(0) - 64; return n - 1; };
+  return sheets.map((name, sheetIndex) => {
+    const rows = [...xml(name).matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)].map(row => {
+      const cells: string[] = [];
+      for (const cell of row[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+        const ref = cell[1].match(/\br="([A-Z]+\d+)"/i)?.[1] || "A1", idx = columnIndex(ref);
+        const type = cell[1].match(/\bt="([^"]+)"/)?.[1];
+        const value = type === "inlineStr" ? [...cell[2].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(part => decode(part[1])).join("") : decode(cell[2].match(/<v\b[^>]*>([\s\S]*?)<\/v>/)?.[1] || "");
+        cells[idx] = type === "s" ? strings[Number(value)] || "" : value;
+      }
+      return cells.map(value => value || "").join("\t");
+    });
+    return `Парақ ${sheetIndex + 1}\n${rows.join("\n")}`;
+  }).join("\n\n");
 }
 
 export async function extractDocument(buffer: Buffer, extension: string) {

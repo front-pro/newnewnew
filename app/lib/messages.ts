@@ -2028,6 +2028,10 @@ export const messages: Record<string, readonly [string, string]> = {
     "PDF, DOCX и текстовые файлы · До 10 МБ",
     "PDF, DOCX and text files · Up to 10 MB"
   ],
+  "PDF, DOCX, XLSX және мәтіндік файлдар · 10 МБ дейін": [
+    "PDF, DOCX, XLSX и текстовые файлы · До 10 МБ",
+    "PDF, DOCX, XLSX and text files · Up to 10 MB"
+  ],
   "Таңдаулылардан алып тастау": [
     "Убрать из избранного",
     "Remove from favorites"

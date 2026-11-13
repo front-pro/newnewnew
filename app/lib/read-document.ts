@@ -1,14 +1,14 @@
 export async function readDocumentFile(file: File, onOcr?: (pages: number) => void): Promise<string> {
   if (file.size > 10 * 1024 * 1024) throw new Error("Файл 10 МБ-тан аспауы керек");
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (extension === "pdf" || extension === "docx") {
+  if (extension === "pdf" || extension === "docx" || extension === "xlsx") {
     const form = new FormData(); form.set("file", file);
     const response = await fetch("/api/files/parse", { method: "POST", body: form });
     const data = await response.json(); if (!response.ok) throw new Error(data.error);
     if (data.ocrPages > 0) onOcr?.(data.ocrPages);
     return data.text;
   }
-  const binaryDocumentExtensions = new Set(["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"]);
+  const binaryDocumentExtensions = new Set(["pdf", "doc", "docx", "xls", "ppt", "pptx", "odt", "ods", "odp"]);
   if (extension && binaryDocumentExtensions.has(extension)) {
     throw new Error("Бұл файл кеңейтімі таңдалды, бірақ оның ішіндегі мәтінді оқу әлі қосылмаған. PDF немесе DOCX форматына айналдырып көріңіз.");
   }
