@@ -388,7 +388,7 @@ function Workspace() {
     return <div className="workspace-shell min-h-screen text-slate-900">
     <Toast message={notice} dismiss={dismissNotice} />
     <AppHeader props={viewProps}/>
-    <div className="app-content xl:ml-64"><MainContent props={viewProps}/><AppFooter /></div>
+    <div className={`app-content ${tab === "company" ? "" : "xl:ml-64"}`}><MainContent props={viewProps}/><AppFooter /></div>
     <AuthDialog props={viewProps}/>
   </div>;
 }
