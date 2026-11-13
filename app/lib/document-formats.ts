@@ -57,6 +57,11 @@ export async function extractDocumentDetailed(buffer: Buffer, extension: string,
     const files = zipOffice(buffer);
     if (!files["word/document.xml"]) throw new Error("DOCX файлының пішімі қате");
     text = (await mammoth.convertToHtml({ buffer })).value;
+  } else if (["png", "jpg", "jpeg"].includes(extension)) {
+    if (buffer.length > 4 * 1024 * 1024) throw new Error("OCR суреті тым үлкен");
+    if (extension === "png" && buffer.subarray(0,8).toString("hex") !== "89504e470d0a1a0a" || ["jpg","jpeg"].includes(extension) && !(buffer[0] === 0xff && buffer[1] === 0xd8)) throw new Error("Сурет файлының пішімі қате");
+    const recognized = await recognizeScannedPages([1], async () => new Uint8Array(buffer), signal);
+    text = recognized.get(1) || ""; ocrPages = recognized.size;
   } else if (extension === "xlsx") {
     const files = zipOffice(buffer);
     if (!files["xl/workbook.xml"]) throw new Error("XLSX файлының пішімі қате");

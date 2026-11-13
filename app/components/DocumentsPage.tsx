@@ -307,7 +307,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
         {workspaceScope === undefined && <><label className="sr-only" htmlFor="document-workspace">{tr("Сақтау кеңістігі")}</label><select id="document-workspace" value={targetWorkspace} onChange={event => setTargetWorkspace(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">{tr("Жеке кеңістік")}</option>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></>}
         <label className={`${secondary} relative ${uploading ? "opacity-50" : "cursor-pointer"}`}>
           {uploading ? tr("Жүктелуде…") : tr("\u2191 Файл жүктеу")}
-          <input aria-label={tr("Құжат жүктеу")} className="absolute inset-0 w-full cursor-pointer opacity-0" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf,.txt,.md,.csv,.tsv,.json,.xml,.html,.log" disabled={uploading} onChange={upload}/>
+          <input aria-label={tr("Құжат жүктеу")} className="absolute inset-0 w-full cursor-pointer opacity-0" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.png,.jpg,.jpeg,.rtf,.txt,.md,.csv,.tsv,.json,.xml,.html,.log" disabled={uploading} onChange={upload}/>
         </label>
         <button onClick={() => newDocument(workspaceScope !== undefined ? workspaceScope || undefined : targetWorkspace || undefined)} className={`${button} gap-2 bg-blue-600 text-white hover:bg-blue-700`}><span aria-hidden="true">＋</span>{tr("Жаңа құжат")}</button>
       </div>
