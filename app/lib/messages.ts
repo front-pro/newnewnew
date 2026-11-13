@@ -12,6 +12,14 @@ export const messages: Record<string, readonly [string, string]> = {
     "Режим компании",
     "Company workspace"
   ],
+  "Бүйір панельдің орнын ауыстыру": [
+    "Переместить боковую панель",
+    "Move side panel"
+  ],
+  "Бүйір панель енін өзгерту": [
+    "Изменить ширину боковой панели",
+    "Resize side panel"
+  ],
   "Осы құрылғыдан шықтыңыз, бірақ сервердегі сессияны тоқтату мүмкін болмады. Қайта кірмес бұрын серверді тексеріңіз.": [
     "Вы вышли на этом устройстве, но серверную сессию завершить не удалось. Проверьте сервер перед повторным входом.",
     "You signed out on this device, but the server session could not be revoked. Check the server before signing in again."
