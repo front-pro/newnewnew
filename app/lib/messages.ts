@@ -2415,7 +2415,7 @@ export const messages: Record<string, readonly [string, string]> = {
   "Құжат атауы немесе мәтіні бойынша іздеу": ["Поиск по названию или тексту документа", "Search document titles and content"],
   "Құжат атауын немесе мәтінін іздеу…": ["Поиск по названию или тексту…", "Search titles or document content…"],
   "Құжат мерзімдері": ["Сроки документов", "Document deadlines"],
-  "Мерзімі жақындаған және өтіп кеткен құжаттар": ["Документы с приближающимся или истекшим сроком", "Upcoming and overdue documents"]
+  "Мерзімі жақындаған және өтіп кеткен құжаттар": ["Документы с приближающимся или истекшим сроком", "Upcoming and overdue documents"],
   "4×4 кесте қосу": ["Добавить таблицу 4×4", "Insert 4×4 table"],
   "Excel торын қосу": ["Добавить сетку Excel", "Insert Excel-style grid"],
 };
