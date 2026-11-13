@@ -4,7 +4,7 @@ import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { AlignmentType, Document, HeadingLevel, ImageRun, Packer, Paragraph, TextRun, type ParagraphChild } from "docx";
 import mammoth from "mammoth";
-import { unzipSync } from "fflate";
+import { unzipSync, zipSync } from "fflate";
 import { recognizeScannedPages } from "./ocr";
 import { editorHtmlToText, sanitizeEditorHtml } from "./editor-content";
 
@@ -77,8 +77,34 @@ export async function extractDocument(buffer: Buffer, extension: string) {
   return (await extractDocumentDetailed(buffer, extension)).text;
 }
 
-export async function exportDocument(format: "pdf" | "docx", title: string, text: string) {
+
+function xlsxExport(html: string) {
+  const rows = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(row =>
+    [...row[1].matchAll(/<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi)].map(cell => editorHtmlToText(cell[1]).replace(/\n/g, " ").trim())
+  ).filter(row => row.length).slice(0, 500);
+  if (!rows.length) rows.push(...editorHtmlToText(html).split(/\n+/).slice(0, 500).map(line => [line]));
+  const escape = (value: string) => value.replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
+  const column = (n: number) => { let label = ""; for (n++; n; n = Math.floor((n - 1) / 26)) label = String.fromCharCode(65 + (n - 1) % 26) + label; return label; };
+  const sheet = rows.map((row, r) => "<row r=\"" + (r + 1) + "\">" + row.slice(0, 50).map((value, c) => {
+    const ref = column(c) + (r + 1);
+    const formula = value.match(/^=([A-Z][A-Z0-9_.]*\(.+\))$/i)?.[1];
+    if (formula) return "<c r=\"" + ref + "\"><f>" + escape(formula) + "</f><v></v></c>";
+    if (/^-?\d+(?:\.\d+)?$/.test(value)) return "<c r=\"" + ref + "\"><v>" + value + "</v></c>";
+    return "<c r=\"" + ref + "\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" + escape(value) + "</t></is></c>";
+  }).join("") + "</row>").join("");
+  const files: Record<string, Uint8Array> = {
+    "[Content_Types].xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
+    "_rels/.rels": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
+    "xl/workbook.xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets><calcPr calcMode="auto"/></workbook>'),
+    "xl/_rels/workbook.xml.rels": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'),
+    "xl/worksheets/sheet1.xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + sheet + '</sheetData></worksheet>')
+  };
+  return Buffer.from(zipSync(files, { level: 6 }));
+}
+
+export async function exportDocument(format: "pdf" | "docx" | "xlsx", title: string, text: string) {
   const html = sanitizeEditorHtml(text);
+  if (format === "xlsx") return xlsxExport(html);
   if (format === "docx") {
     const paragraphs: Paragraph[] = [];
     const tokens = html.match(/<[^>]+>|[^<]+/g) || [];
