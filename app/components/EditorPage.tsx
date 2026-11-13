@@ -76,7 +76,7 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
     }
     if (!found) props.setNotice(tr("Мәтін табылмады"));
   }
-  async function exportFile(format: "pdf" | "docx") {
+  async function exportFile(format: "pdf" | "docx" | "xlsx") {
     setExporting(true);
     try { await downloadDocument(format, props.editorTitle, sanitizeEditorHtml(props.editorText)); }
     catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Экспорт орындалмады")); }
@@ -149,7 +149,7 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
         <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif" className="hidden" onChange={event => { void insertImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <select aria-label={tr("Сурет өлшемі")} defaultValue="100" onChange={event => resizeImage(event.target.value)} className="rounded-lg border border-slate-200 bg-white p-2 text-xs"><option value="100">{tr("Сурет: толық")}</option><option value="75">75%</option><option value="50">50%</option><option value="25">25%</option></select>
         <form onSubmit={find} className="ml-auto flex min-w-0 gap-1"><input aria-label={tr("Мәтіннен іздеу")} placeholder={tr("Мәтіннен іздеу")} value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 max-w-40 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"/><button aria-label={tr("Келесісін табу")} className="rounded-lg border border-slate-200 p-2"><Icon name="search" className="size-4"/></button></form>
-        <div className="flex gap-2">{(["docx", "pdf"] as const).map(format => <button key={format} disabled={exporting || !plainText} onClick={() => void exportFile(format)} className={`${button} gap-2 border border-slate-200 text-xs`}>{exporting && <Icon name="loader" className="size-3 animate-spin"/>}{format.toUpperCase()}</button>)}</div>
+        <div className="flex gap-2">{(["docx", "pdf", "xlsx"] as const).map(format => <button key={format} disabled={exporting || !plainText} onClick={() => void exportFile(format)} className={`${button} gap-2 border border-slate-200 text-xs`}>{exporting && <Icon name="loader" className="size-3 animate-spin"/>}{format.toUpperCase()}</button>)}</div>
       </div>
     </section>
 
