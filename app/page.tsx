@@ -167,6 +167,7 @@ function Workspace() {
         }
     };
     const startAnalysis = async (withAi = false) => {
+        const aiEnabled = withAi === true;
         if (analysisBusy) return;
         if (!a.trim() || !b.trim()) {
             setNotice(tr("Екі құжатты да енгізіңіз."));
@@ -175,7 +176,7 @@ function Workspace() {
         setAnalysisBusy(true); setReport(null);
         const sources = { a, b };
         try {
-            const response = await fetch("/api/analysis/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a, b, withAi, language: locale }) });
+            const response = await fetch("/api/analysis/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a, b, withAi: aiEnabled, language: locale }) });
             const result = await response.json();
             if (!response.ok)
                 throw new Error(result.error);
