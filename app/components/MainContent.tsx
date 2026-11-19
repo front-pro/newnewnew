@@ -32,6 +32,6 @@ export default function MainContent({ props }: { props: WorkspaceProps }) {
     {tab === "history" && <HistoryPage props={props} />}
     {tab === "approvals" && sessionUser && <ApprovalInbox setNotice={setNotice} />}
     {tab === "profile" && <><ProfilePage props={props} />{sessionUser && <AccountPage props={props} mode="delete" />}</>}
-    {tab === "users" && sessionUser?.role === "admin" && <AdminPanel props={props} />}
+    {tab === "users" && <AdminPanel props={props} />}
   </main>;
 }

@@ -155,7 +155,7 @@ function Workspace() {
         Tab,
         string
     ][] = activeWorkspaceId ? [["company", tr("Компаниялық жұмыс орны")], ...(tab === "editor" ? [["editor", tr("Құжат редакторы")] as [Tab, string]] : [])] : [["dashboard", tr("Басты бет")], ["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ...(sessionUser ? [["approvals", tr("Бекітулер")] as [Tab, string]] : []), ["users", tr("Әкімші панелі")], ...(sessionUser && workspaces.length === 0 ? [["company", tr("Компаниялық жұмыс орны")] as [Tab, string]] : [])];
-    const nav = allNav.filter(([id]) => id === "users" ? sessionUser?.role === "admin" : canAccessModule(sessionUser, id));
+    const nav = allNav.filter(([id]) => id === "users" || canAccessModule(sessionUser, id));
     const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file)

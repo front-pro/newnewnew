@@ -5,7 +5,7 @@ import Icon from "./Icon";
 import { useLanguage } from "./LanguageProvider";
 import { roleKey } from "../lib/i18n";
 import { accessModules, type AccessModule } from "../lib/access-control";
-import { card } from "./styles";
+import { button, card } from "./styles";
 import type { WorkspaceProps } from "./workspace-context";
 
 const moduleMeta: Record<AccessModule, { label: string; description: string }> = {
@@ -30,6 +30,11 @@ export default function AdminPanel({ props }: { props: WorkspaceProps }) {
   const employees = props.users.filter(user => user.role === "employee").length;
   const filtered = useMemo(() => props.users.filter(user => (roleFilter === "all" || user.role === roleFilter)
     && `${user.name} ${user.email}`.toLocaleLowerCase(locale).includes(query.trim().toLocaleLowerCase(locale))), [props.users, roleFilter, query, locale]);
+
+  if (props.sessionUser?.role !== "admin") return <div className="mx-auto max-w-2xl space-y-6 py-8">
+    <header className="text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><Icon name="shield" className="size-7"/></span><p className="mt-4 text-xs font-semibold uppercase tracking-[.18em] text-blue-600">{tr("Қауіпсіз аймақ")}</p><h1 className="mt-2 text-3xl font-bold">{tr("Әкімші панелі")}</h1><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">{tr("Жалғастыру үшін әкімші аккаунтының логині мен құпиясөзімен кіріңіз.")}</p></header>
+    <section className={`${card} space-y-4 text-center`}><div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">{props.sessionUser ? <>{tr("Қазір сіз әкімші емес аккаунтпен кірдіңіз.")}<br/>{tr("Әкімші аккаунтына ауысу үшін төмендегі батырманы басыңыз.")}</> : tr("Әкімшіге арналған құралдарды ашу үшін жүйеге кіріңіз.")}</div><button onClick={() => props.setAuthMode("login")} className={`${button} gap-2 bg-blue-600 text-white`}><Icon name="settings" className="size-4"/>{tr("Әкімші аккаунтымен кіру")}</button></section>
+  </div>;
 
   async function updatePermissions(email: string, permissions: AccessModule[]) {
     setSaving(email);
