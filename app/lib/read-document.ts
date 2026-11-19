@@ -22,7 +22,7 @@ export async function readDocumentFile(file: File, onOcr?: (pages: number) => vo
   }
   if (extension === "csv" || extension === "tsv") {
     const source = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer()).replace(/^\uFEFF/, "");
-    return delimitedHtml(source, extension === "tsv" ? "\\t" : ",");
+    return delimitedHtml(source, extension === "tsv" ? "\t" : ",");
   }
   if (extension === "rtf") return rtfText(new TextDecoder("windows-1252").decode(await file.arrayBuffer()));
   const binaryDocumentExtensions = new Set(["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"]);
