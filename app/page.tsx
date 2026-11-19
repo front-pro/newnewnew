@@ -9,6 +9,7 @@ import AppFooter from "./components/AppFooter";
 import TemplateCard from "./components/TemplateCard";
 import type { CompanyWorkspace, HistoryRow, WorkspaceProps } from "./components/workspace-context";
 import { readDocumentFile } from "./lib/read-document";
+import { editorHtmlToText } from "./lib/editor-content";
 import { matchesSearch } from "./lib/search";
 import { LanguageProvider, useLanguage } from "./components/LanguageProvider";
 import { ThemeProvider } from "./components/ThemeProvider";
@@ -154,7 +155,8 @@ function Workspace() {
         if (!file)
             return;
         try {
-            setter(await readDocumentFile(file));
+            const imported = await readDocumentFile(file);
+            setter(/<(?:p|div|table|tr|td|th)\\b/i.test(imported) ? editorHtmlToText(imported) : imported);
             setNotice(tr("{p0} файлы жүктелді", { p0: file.name }));
         }
         catch (error) {
