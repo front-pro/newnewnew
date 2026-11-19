@@ -2,6 +2,7 @@
 
 import { useLanguage } from "./LanguageProvider";
 import AccountPage from "./AccountPage";
+import AdminPanel from "./AdminPanel";
 import ProfilePage from "./ProfilePage";
 import AnalysisPage from "./AnalysisPage";
 import ApprovalInbox from "./ApprovalInbox";
@@ -31,6 +32,6 @@ export default function MainContent({ props }: { props: WorkspaceProps }) {
     {tab === "history" && <HistoryPage props={props} />}
     {tab === "approvals" && sessionUser && <ApprovalInbox setNotice={setNotice} />}
     {tab === "profile" && <><ProfilePage props={props} />{sessionUser && <AccountPage props={props} mode="delete" />}</>}
-    {tab === "users" && <AccountPage props={props} mode="users" />}
+    {tab === "users" && sessionUser?.role === "admin" && <AdminPanel props={props} />}
   </main>;
 }

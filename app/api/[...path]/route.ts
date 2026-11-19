@@ -4,6 +4,7 @@ import { analyzeComparison, type ComparisonChangeInput } from "../../lib/ai-comp
 import type { Template, User } from "../auth/_lib";
 import { handleApprovalRequest, handleDocumentRequest } from "../documents-handler";
 import { handleWorkspaceRequest } from "../workspaces-handler";
+import { accessModules, canAccessModule, effectivePermissions } from "../../lib/access-control";
 
 type Clause = { n: string; text: string };
 const clauses = (value: string): Clause[] => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const match = line.match(/^(\d+(?:\.\d+)*)\.?\s+(.*)$/); return { n: match?.[1] || "", text: match?.[2] || line }; });
@@ -31,10 +32,19 @@ async function handle(request: Request) {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent), method = request.method;
     if (path[0] === "documents") return await handleDocumentRequest(request, path.slice(1));
-    if (path[0] === "approvals") return await handleApprovalRequest(request, path.slice(1));
-    if (path[0] === "workspaces") return await handleWorkspaceRequest(request, path.slice(1));
+    if (path[0] === "approvals") {
+      const user = await currentUser(request);
+      if (user && !canAccessModule(user, "approvals")) return fail("Бұл бөлімге қол жеткізуге рұқсат жоқ", 403);
+      return await handleApprovalRequest(request, path.slice(1));
+    }
+    if (path[0] === "workspaces") {
+      const user = await currentUser(request);
+      if (user && !canAccessModule(user, "company")) return fail("Компания бөліміне қол жеткізуге рұқсат жоқ", 403);
+      return await handleWorkspaceRequest(request, path.slice(1));
+    }
     const store = await readStore(), user = await currentUser(request, store), role = user?.role || "guest";
     if (path[0] === "analysis" && path[1] === "run" && method === "POST") {
+      if (user && !canAccessModule(user, "compare")) return fail("Салыстыру бөліміне қол жеткізуге рұқсат жоқ", 403);
       const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
       const a = String(body.a || ""), b = String(body.b || "");
       if (!a.trim() || !b.trim()) return fail("Екі құжаттың мәтінін енгізіңіз (A және B)");
@@ -62,12 +72,14 @@ async function handle(request: Request) {
     }
     if (path[0] === "analysis" && path[1] && path.length === 2 && method === "GET") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
+      if (!canAccessModule(user, "compare")) return fail("Салыстыру бөліміне қол жеткізуге рұқсат жоқ", 403);
       const record = store.analyses[path[1]];
       if (!record || record.owner !== user.email) return fail("Талдау табылмады", 404);
       return json(record.result);
     }
     if (path[0] === "analysis" && path[1] && path[2] === "export" && method === "GET") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
+      if (!canAccessModule(user, "compare")) return fail("Салыстыру бөліміне қол жеткізуге рұқсат жоқ", 403);
       const record = store.analyses[path[1]];
       if (!record || record.owner !== user.email) return fail("Талдау табылмады", 404);
       const result = record.result as { changes: { type: string; title: string; a: string; b: string; description: string }[] };
@@ -80,21 +92,25 @@ async function handle(request: Request) {
     }
     if (path[0] === "templates" && method === "GET" && path.length === 1) {
       if (!user) return fail("Жүйеге кіріңіз", 401);
+      if (!canAccessModule(user, "templates")) return fail("Үлгілер бөліміне қол жеткізуге рұқсат жоқ", 403);
       return json(store.templates.map(t => accessible(user, t) ? t : { id: t.id, title: t.title, desc: t.desc, access: t.access, owner: t.owner, locked: true }));
     }
     if (path[0] === "templates" && path[1] && path.length === 2 && method === "GET") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
+      if (!canAccessModule(user, "templates")) return fail("Үлгілер бөліміне қол жеткізуге рұқсат жоқ", 403);
       const template = store.templates.find(t => t.id === Number(path[1])); if (!template) return fail("Үлгі табылмады", 404);
       if (!accessible(user, template)) return fail("Бұл үлгі тек қызметкерлерге қолжетімді", 403); return json(template);
     }
     if (path[0] === "templates" && path[1] && path[2] === "use" && method === "POST") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
+      if (!canAccessModule(user, "templates") || !canAccessModule(user, "editor")) return fail("Үлгіні қолдануға рұқсат жоқ", 403);
       const template = store.templates.find(t => t.id === Number(path[1])); if (!template) return fail("Үлгі табылмады", 404);
       if (!accessible(user, template)) return fail("Бұл үлгі тек қызметкерлерге қолжетімді", 403);
       store.log.push({ owner: user.email, type: "Үлгі", tone: "violet", title: template.title, meta: `${stamp()} · редакторда ашылды` }); await writeStore(store); return json(template);
     }
     if (path[0] === "templates" && method === "POST" && path.length === 1) {
       if (!user || !["employee", "admin"].includes(role)) return fail("Үлгі қосуға рұқсат жоқ", user ? 403 : 401);
+      if (!canAccessModule(user, "templates")) return fail("Үлгілер бөліміне қол жеткізуге рұқсат жоқ", 403);
       const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
       const title = String(body.title || "").trim(), desc = String(body.desc || "").trim(), text = String(body.body || ""), access = body.access === "employee" ? "employee" : "public";
       if (title.length < 3 || title.length > 160) return fail("Атауы 3–160 таңба болуы керек"); if (desc.length > 1000) return fail("Сипаттама тым ұзын"); if (!text.trim()) return fail("Үлгі мәтіні бос"); if (text.length > 200000) return fail("Үлгі мәтіні тым үлкен", 413);
@@ -103,13 +119,15 @@ async function handle(request: Request) {
     }
     if (path[0] === "templates" && path[1] && method === "DELETE") {
       if (!user || !["employee", "admin"].includes(role)) return fail("Үлгіні жоюға рұқсат жоқ", user ? 403 : 401);
+      if (!canAccessModule(user, "templates")) return fail("Үлгілер бөліміне қол жеткізуге рұқсат жоқ", 403);
       const template = store.templates.find(t => t.id === Number(path[1])); if (!template) return fail("Үлгі табылмады", 404);
       if (role !== "admin" && template.owner !== user.email) return fail("Тек өз үлгіңізді жоя аласыз", 403);
       store.templates = store.templates.filter(t => t.id !== template.id); await writeStore(store); return json({ ok: true });
     }
-    if (path[0] === "history" && path[1] === "trash" && method === "GET") { if (!user) return fail("Жүйеге кіріңіз", 401); return json(store.historyTrash.filter(row => row.owner === user.email).reverse()); }
+    if (path[0] === "history" && path[1] === "trash" && method === "GET") { if (!user) return fail("Жүйеге кіріңіз", 401); if (!canAccessModule(user, "history")) return fail("Тарих бөліміне қол жеткізуге рұқсат жоқ", 403); return json(store.historyTrash.filter(row => row.owner === user.email).reverse()); }
     if (path[0] === "history" && path[1] === "trash" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Жүйеге кіріңіз", 401);
+      if (!canAccessModule(user, "history")) return fail("Тарих бөліміне қол жеткізуге рұқсат жоқ", 403);
       let body;
       try { body = await request.json(); } catch { return fail("JSON сұрауының форматы қате"); }
       if (!body || typeof body.type !== "string" || typeof body.title !== "string" || typeof body.meta !== "string") return fail("Тарих жазбасы көрсетілмеген");
@@ -120,9 +138,10 @@ async function handle(request: Request) {
       await writeStore(store);
       return json({ ok: true });
     }
-    if (path[0] === "history" && method === "GET") { if (!user) return fail("Жүйеге кіріңіз", 401); return json(store.log.filter(row => row.owner === user.email).reverse()); }
+    if (path[0] === "history" && method === "GET") { if (!user) return fail("Жүйеге кіріңіз", 401); if (!canAccessModule(user, "history")) return fail("Тарих бөліміне қол жеткізуге рұқсат жоқ", 403); return json(store.log.filter(row => row.owner === user.email).reverse()); }
     if (path[0] === "history" && method === "DELETE") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
+      if (!canAccessModule(user, "history")) return fail("Тарих бөліміне қол жеткізуге рұқсат жоқ", 403);
       let body;
       try { body = await request.json(); } catch { return fail("JSON сұрауының форматы қате"); }
       if (!body || typeof body.type !== "string" || typeof body.title !== "string" || typeof body.meta !== "string") return fail("Тарих жазбасы көрсетілмеген");
@@ -133,13 +152,24 @@ async function handle(request: Request) {
       await writeStore(store);
       return json({ ok: true });
     }
-    if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ name, email, role: userRole }) => ({ name, email, role: userRole }))); }
+    if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ name, email, role: userRole, permissions, emailVerifiedAt }) => ({ name, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions }), emailVerified: !!emailVerifiedAt }))); }
     if (path[0] === "users" && path[1] && method === "PATCH") {
-      if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
+      if (!user || role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
       const email = path[1], body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
-      const nextRole = String(body.role); if (!["user", "employee", "admin"].includes(nextRole)) return fail("Рөл қате");
-      if (email === user?.email) return fail("Өз рөліңізді өзгертуге болмайды"); const target = store.users.find(item => item.email === email); if (!target) return fail("Пайдаланушы табылмады", 404);
-      target.role = nextRole as User["role"]; await writeStore(store); return json({ name: target.name, email: target.email, role: target.role });
+      const target = store.users.find(item => item.email === email); if (!target) return fail("Пайдаланушы табылмады", 404);
+      if (body.role !== undefined) {
+        const nextRole = String(body.role); if (!["user", "employee", "admin"].includes(nextRole)) return fail("Рөл қате");
+        if (email === user.email) return fail("Өз рөліңізді өзгертуге болмайды");
+        if (target.role === "admin" && nextRole !== "admin" && store.users.filter(item => item.role === "admin").length <= 1) return fail("Жүйеде кемінде бір әкімші қалуы керек", 409);
+        if (target.role !== nextRole) { target.role = nextRole as User["role"]; delete target.permissions; }
+      }
+      if (body.permissions !== undefined) {
+        if (!Array.isArray(body.permissions) || body.permissions.some((value: unknown) => typeof value !== "string" || !accessModules.includes(value as typeof accessModules[number]))) return fail("Рұқсаттар тізімі қате");
+        if (target.role === "admin") return fail("Әкімшіге барлық бөлімдер қолжетімді");
+        target.permissions = [...new Set(body.permissions as typeof accessModules[number][])];
+      }
+      await writeStore(store);
+      return json({ name: target.name, email: target.email, role: target.role, permissions: effectivePermissions(target), emailVerified: !!target.emailVerifiedAt });
     }
     return fail("API маршрут табылмады", 404);
   } catch (error) { return apiError(error); }

@@ -1,4 +1,5 @@
 import type { DocumentDetail, DocumentVersion } from "../lib/documents";
+import type { AccessModule } from "../lib/access-control";
 import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 
 export type Tab = "dashboard" | "profile" | "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
@@ -8,8 +9,8 @@ export type Change = { id: number; type: string; title: string; description: str
 export type AiComparisonFinding = { changeId: number; whatChanged: string; impact: string; severity: "low" | "medium" | "high"; recommendation: string };
 export type AiComparison = { summary: string; overallRisk: "low" | "medium" | "high"; findings: AiComparisonFinding[] };
 export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[]; aiAnalysis?: AiComparison; aiAnalysisError?: string };
-export type SessionUser = { id: string; name: string; email: string; role: string; platformRole?: "operator" | null; company?: string; position?: string; avatar?: string | null };
-export type UserRow = { name: string; email: string; role: string };
+export type SessionUser = { id: string; name: string; email: string; role: string; permissions?: AccessModule[] | null; platformRole?: "operator" | null; company?: string; position?: string; avatar?: string | null; emailVerified?: boolean };
+export type UserRow = { name: string; email: string; role: string; permissions?: AccessModule[]; emailVerified?: boolean };
 export type HistoryRow = { title: string; type: string; meta: string; documentId?: string };
 export type AuthMode = "login" | "register" | "verify" | "reset" | "reset-confirm" | null;
 
@@ -64,6 +65,7 @@ export type WorkspaceProps = {
   exportReport: () => Promise<void>;
   createTemplate: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   changeRole: (email: string, role: string) => Promise<void>;
+  changePermissions: (email: string, permissions: AccessModule[]) => Promise<void>;
   deleteTemplate: (template: Template) => Promise<void>;
   downloadText: (text: string, filename: string, type?: string) => void;
   submitAuth: (event: FormEvent<HTMLFormElement>) => Promise<void>;

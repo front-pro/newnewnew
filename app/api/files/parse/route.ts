@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { consumeAuthRateLimit, currentUser, withStoreLock } from "../../auth/_lib";
 import { extractDocumentDetailed } from "../../../lib/document-formats";
 import { OcrError } from "../../../lib/ocr";
+import { canAccessModule } from "../../../lib/access-control";
 export async function POST(request: Request) {
   const user = await currentUser(request);
   if (!user) return NextResponse.json({ error: "Жүйеге кіріңіз" }, { status: 401 });
+  if (!(canAccessModule(user, "editor") || canAccessModule(user, "documents") || canAccessModule(user, "compare"))) return NextResponse.json({ error: "Файлдарды жүктеуге рұқсат жоқ" }, { status: 403 });
   const limit = await withStoreLock(() => consumeAuthRateLimit(request, user.email, 20, 60000, "file-parse"));
   if (limit.limited) return NextResponse.json({ error: "Файл сұраулары тым көп" }, { status: 429 });
   if (Number(request.headers.get("content-length")) > 11 * 1024 * 1024) return NextResponse.json({ error: "Файл 10 МБ-тан аспауы керек" }, { status: 413 });

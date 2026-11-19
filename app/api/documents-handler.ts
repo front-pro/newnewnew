@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { summarizeDocument } from "../lib/documents";
+import { canAccessModule } from "../lib/access-control";
 import { editorHtmlToText, sanitizeEditorHtml } from "../lib/editor-content";
 import type { SavedDocument } from "../lib/documents";
 import { appendAuditEvent, currentUser, readStore, stamp, writeStore } from "./auth/_lib";
@@ -18,6 +19,7 @@ export async function handleDocumentRequest(request: Request, path: string[]) {
 
 export async function handleDocuments(request: Request, path: string[], store: Store, user: User | null, workspaceScope?: string | null) {
   if (!user) return fail("Жүйеге кіріңіз", 401);
+  if (!canAccessModule(user, "documents") && !canAccessModule(user, "editor")) return fail("Құжаттар бөліміне қол жеткізуге рұқсат жоқ", 403);
   const method = request.method;
   const url = new URL(request.url);
   const permission = (document: SavedDocument): "owner" | "editor" | "commenter" | "viewer" | "none" => {

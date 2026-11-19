@@ -14,6 +14,7 @@ import { matchesSearch } from "./lib/search";
 import { LanguageProvider, useLanguage } from "./components/LanguageProvider";
 import { ThemeProvider } from "./components/ThemeProvider";
 import type { DocumentDetail, DocumentVersion } from "./lib/documents";
+import { canAccessModule, type AccessModule } from "./lib/access-control";
 type Tab = "dashboard" | "profile" | "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
 type Template = {
     id: number;
@@ -47,11 +48,15 @@ type SessionUser = {
     name: string;
     email: string;
     role: string;
+    permissions?: AccessModule[] | null;
+    emailVerified?: boolean;
 };
 type UserRow = {
     name: string;
     email: string;
     role: string;
+    permissions?: AccessModule[];
+    emailVerified?: boolean;
 };
 const sampleA = `1.1. Департамент ұйымның құрылымдық бөлімшесі болып табылады.\n2.1. Құжаттарды қағаз және электронды түрде архивтеуді қамтамасыз ету.\n3.1. Ақпараттық жүйелердің қауіпсіздігін тексеру жүргізіледі.\n3.2. Ақпараттық жүйелерді әзірлеу ұйымдастырылады.`;
 const sampleB = `1.1. Департамент ұйымның құрылымдық бөлімшесі болып табылады.\n2.1. Жасанды интеллект негізіндегі құжаттарды автоматты талдауды қамтамасыз ету.\n3.1. Ақпараттық жүйелердің қауіпсіздігін тексеру және әзірлеу жүргізіледі.\n3.2. Ақпараттық жүйелердің қауіпсіздігін тексеру жүргізіледі.`;
@@ -146,10 +151,11 @@ function Workspace() {
     useEffect(() => {
         if (ready) { if (preferences.autosave) localStorage.setItem("kt-agent-state", JSON.stringify({ editorText })); else localStorage.removeItem("kt-agent-state"); }
     }, [ready, editorText, preferences.autosave]);
-    const nav: [
+    const allNav: [
         Tab,
         string
-    ][] = activeWorkspaceId ? [["company", tr("Компаниялық жұмыс орны")], ...(tab === "editor" ? [["editor", tr("Құжат редакторы")] as [Tab, string]] : [])] : [["dashboard", tr("Басты бет")], ["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ...(sessionUser ? [["approvals", tr("Бекітулер")] as [Tab, string]] : []), ["users", tr("Пайдаланушылар")], ...(sessionUser && workspaces.length === 0 ? [["company", tr("Компаниялық жұмыс орны")] as [Tab, string]] : [])];
+    ][] = activeWorkspaceId ? [["company", tr("Компаниялық жұмыс орны")], ...(tab === "editor" ? [["editor", tr("Құжат редакторы")] as [Tab, string]] : [])] : [["dashboard", tr("Басты бет")], ["compare", tr("Талдау (A/B)")], ["documents", tr("Құжаттар")], ["templates", tr("Үлгілер")], ["editor", tr("Редактор")], ["history", tr("Тарих")], ...(sessionUser ? [["approvals", tr("Бекітулер")] as [Tab, string]] : []), ["users", tr("Әкімші панелі")], ...(sessionUser && workspaces.length === 0 ? [["company", tr("Компаниялық жұмыс орны")] as [Tab, string]] : [])];
+    const nav = allNav.filter(([id]) => id === "users" ? sessionUser?.role === "admin" : canAccessModule(sessionUser, id));
     const handleFile = (setter: (s: string) => void) => async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file)
@@ -360,12 +366,21 @@ function Workspace() {
             const data = await response.json();
             if (!response.ok)
                 throw new Error(data.error);
-            setUsers(users.map(item => item.email === email ? data : item));
+            setUsers(current => current.map(item => item.email === email ? data : item));
             setNotice(tr("Пайдаланушы рөлі жаңартылды."));
         }
         catch (error) {
             setNotice(error instanceof Error ? tr(error.message) : tr("Рөлді жаңарту мүмкін болмады"));
         }
+    };
+    const changePermissions = async (email: string, permissions: AccessModule[]) => {
+        try {
+            const response = await fetch(`/api/users/${encodeURIComponent(email)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ permissions }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Қолжетімділікті өзгерту мүмкін болмады");
+            setUsers(current => current.map(item => item.email === email ? data : item));
+            setNotice(tr("Қолжетімділік жаңартылды."));
+        } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Қолжетімділікті өзгерту мүмкін болмады")); }
     };
     const deleteTemplate = async (t: Template) => {
         try {
@@ -384,7 +399,7 @@ function Workspace() {
     const filteredTemplates = templates.filter(t => matchesSearch(templateQuery, [t.title, t.desc, t.locked ? "" : t.body, t.owner], locale));
     const filteredTemplateCount = filteredTemplates.length;
     const cards = filteredTemplates.map(template => <TemplateCard key={template.id} template={template} onOpen={()=>setOpenTemplate(template)} onUse={()=>void editTemplate(template)} onDownload={()=>downloadText(template.body, `template-${template.id}.txt`)} onDelete={!template.locked && sessionUser && (sessionUser.role === "admin" || template.owner === sessionUser.email) ? ()=>void deleteTemplate(template) : undefined}/>);
-    const viewProps: WorkspaceProps = { nav, tab, setTab, goBackTab, canGoBack: tabHistory.current.length > 0, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, analysisBusy, analysisSources, templates, editorText, setEditorText, editorTitle, setEditorTitle, editorKey, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, setHistory, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, openAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
+    const viewProps: WorkspaceProps = { nav, tab, setTab, goBackTab, canGoBack: tabHistory.current.length > 0, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, analysisBusy, analysisSources, templates, editorText, setEditorText, editorTitle, setEditorTitle, editorKey, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, setHistory, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, startAnalysis, openAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, changePermissions, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
     const dismissNotice = () => setNotice("");
     return <div className="workspace-shell min-h-screen text-slate-900">
     <Toast message={notice} dismiss={dismissNotice} />

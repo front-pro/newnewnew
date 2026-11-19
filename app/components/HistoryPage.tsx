@@ -8,6 +8,7 @@ import Icon from "./Icon";
 import HistoryToolbar, { type HistorySortOrder } from "./HistoryToolbar";
 import HistoryActivity from "./HistoryActivity";
 import type { HistoryRow, WorkspaceProps } from "./workspace-context";
+import { canAccessModule } from "../lib/access-control";
 type TrashedHistoryRow = HistoryRow & { trashedAt: string };
 
 export default function HistoryPage({ props }: { props: WorkspaceProps }) {
@@ -22,11 +23,12 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   const [sortOrder, setSortOrder] = useState<HistorySortOrder>("newest");
   const [openingKey, setOpeningKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const documentAccess = canAccessModule(props.sessionUser, "documents");
   useEffect(() => {
     if (!props.sessionUser) return;
     const controller = new AbortController();
     Promise.all([
-      fetch("/api/documents", { signal: controller.signal }).then(response => response.ok ? response.json() : []),
+      documentAccess ? fetch("/api/documents", { signal: controller.signal }).then(response => response.ok ? response.json() : []) : Promise.resolve([]),
       fetch("/api/history/trash", { signal: controller.signal }).then(response => response.ok ? response.json() : []),
     ]).then(([active, trash]) => {
       if (controller.signal.aborted) return;
@@ -34,7 +36,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
       setTrashEntries(Array.isArray(trash) ? trash : []);
     }).catch(() => {});
     return () => controller.abort();
-  }, [props.sessionUser]);
+  }, [props.sessionUser, documentAccess]);
   const title = (row: HistoryRow) => row.type === "ЖИ талдауы" && /^Салыстыру #\d+$/.test(row.title) ? tr("Салыстыру #{id}", { id: row.title.split("#")[1] }) : tr(row.title);
   const metadata = (meta: string) => {
     const timestamp = historyTimestamp(meta);
@@ -80,10 +82,10 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
       <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"><p className="text-xs font-medium text-emerald-700">{tr("Құжат әрекеттері")}</p><p className="mt-1 text-2xl font-bold text-emerald-800">{documentCount}</p></div>
     </div>
     <div className="flex flex-wrap items-center gap-3" role="group" aria-label={tr("Құжаттарды сүзу")}>
-      <button type="button" aria-pressed={scope === "documents"} onClick={() => setScope(scope === "documents" ? "all" : "documents")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "documents" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="file" className="size-4"/>{tr("Құжаттар")}</button>
+      {documentAccess && <button type="button" aria-pressed={scope === "documents"} onClick={() => setScope(scope === "documents" ? "all" : "documents")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "documents" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="file" className="size-4"/>{tr("Құжаттар")}</button>}
       <button type="button" aria-pressed={scope === "trash"} onClick={() => setScope(scope === "trash" ? "all" : "trash")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "trash" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="trash" className="size-4"/>{tr("Себет")}<span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{trashEntries.length}</span></button>
-      <button type="button" aria-pressed={scope === "favorites"} onClick={() => setScope(scope === "favorites" ? "all" : "favorites")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "favorites" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="star" className="size-4"/>{tr("Таңдаулылар")}</button>
-      <label className="flex items-center gap-2 text-sm text-slate-500"><Icon name="folder" className="size-4"/>{tr("Қалта")}<select aria-label={tr("Қалта")} value={folder} onChange={event => setFolder(event.target.value)} className="rounded-xl border border-slate-200 bg-white p-2 text-sm text-slate-800"><option value="all">{tr("Барлық қалталар")}</option><option value="">{tr("Қалтасыз")}</option>{folderOptions.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+      {documentAccess && <><button type="button" aria-pressed={scope === "favorites"} onClick={() => setScope(scope === "favorites" ? "all" : "favorites")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "favorites" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="star" className="size-4"/>{tr("Таңдаулылар")}</button>
+      <label className="flex items-center gap-2 text-sm text-slate-500"><Icon name="folder" className="size-4"/>{tr("Қалта")}<select aria-label={tr("Қалта")} value={folder} onChange={event => setFolder(event.target.value)} className="rounded-xl border border-slate-200 bg-white p-2 text-sm text-slate-800"><option value="all">{tr("Барлық қалталар")}</option><option value="">{tr("Қалтасыз")}</option>{folderOptions.map(value => <option key={value} value={value}>{value}</option>)}</select></label></>}
     </div>
     <HistoryToolbar query={query} onQueryChange={setQuery} typeFilter={typeFilter} onTypeFilterChange={setTypeFilter} typeOptions={typeOptions} sortOrder={sortOrder} onSortOrderChange={setSortOrder} count={visibleRows.length} total={scope === "trash" ? trashEntries.length : history.length} />
     <section aria-label={tr("Әрекеттер тізімі")}>
@@ -127,7 +129,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
           finally { setDeletingKey(null); }
         };
         const favorite = row.documentId ? Boolean(documentById.get(row.documentId)?.favorite) : false;
-        const toggleFavorite = row.type === "Құжат" && row.documentId && !inTrash ? async () => {
+        const toggleFavorite = documentAccess && row.type === "Құжат" && row.documentId && !inTrash ? async () => {
           const nextFavorite = !favorite;
           setDeletingKey(rowKey);
           try {
