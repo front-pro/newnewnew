@@ -24,24 +24,22 @@ type Template = {
     locked?: boolean;
 };
 type Change = {
+    id: number;
     type: string;
     title: string;
     description: string;
     a: string;
     b: string;
 };
+type AiComparison = { summary: string; overallRisk: "low" | "medium" | "high"; findings: { changeId: number; whatChanged: string; impact: string; severity: "low" | "medium" | "high"; recommendation: string }[] };
 type Report = {
     id: number;
     isSaved?: boolean;
     summary: string;
-    metrics: {
-        total: number;
-        conflicts: number;
-        lost: number;
-        news: number;
-        changed: number;
-    };
+    metrics: { total: number; conflicts: number; lost: number; news: number; changed: number };
     changes: Change[];
+    aiAnalysis?: AiComparison;
+    aiAnalysisError?: string;
 };
 type SessionUser = {
     id: string;
@@ -166,7 +164,7 @@ function Workspace() {
             e.target.value = "";
         }
     };
-    const startAnalysis = async () => {
+    const startAnalysis = async (withAi = false) => {
         if (analysisBusy) return;
         if (!a.trim() || !b.trim()) {
             setNotice(tr("Екі құжатты да енгізіңіз."));
@@ -175,7 +173,7 @@ function Workspace() {
         setAnalysisBusy(true); setReport(null);
         const sources = { a, b };
         try {
-            const response = await fetch("/api/analysis/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a, b }) });
+            const response = await fetch("/api/analysis/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a, b, withAi, language: locale }) });
             const result = await response.json();
             if (!response.ok)
                 throw new Error(result.error);
@@ -183,7 +181,7 @@ function Workspace() {
             setReport(result);
             if (sessionUser)
                 await refreshAccountData(sessionUser);
-            setNotice(tr("Талдау аяқталды."));
+            setNotice(result.aiAnalysisError ? tr(result.aiAnalysisError) : tr("Талдау аяқталды."));
         }
         catch (error) {
             setNotice(error instanceof Error ? tr(error.message) : tr("Талдау орындалмады"));
