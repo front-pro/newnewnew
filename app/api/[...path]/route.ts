@@ -23,6 +23,7 @@ function compare(aText: string, bText: string) {
 }
 const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "private, no-store" } });
 const fail = (message: string, status = 400) => json({ error: message }, status);
+const sameHistoryEntry = (row: { type: string; title: string; meta: string; documentId?: string }, body: Record<string, unknown>) => row.type === body.type && row.title === body.title && row.meta === body.meta && (row.documentId || "") === (typeof body.documentId === "string" ? body.documentId : "");
 const accessible = (user: Awaited<ReturnType<typeof currentUser>>, template: Template) => template.access === "public" || user?.role === "employee" || user?.role === "admin";
 const apiError = (e: unknown) => e instanceof SyntaxError ? fail("JSON сұрауының форматы қате", 400) : fail("Сервер қатесі", 500);
 async function handle(request: Request) {
@@ -42,6 +43,12 @@ async function handle(request: Request) {
       const id = store.nextId++, result = { id, ...compare(a, b), isSaved: !!user };
       if (user) { store.analyses[String(id)] = { owner: user.email, result }; store.log.push({ owner: user.email, type: "ЖИ талдауы", tone: "blue", title: `Салыстыру #${id}`, meta: `${stamp()} · ${(result as ReturnType<typeof compare>).metrics.total} өзгеріс анықталды` }); await writeStore(store); }
       return json(result);
+    }
+    if (path[0] === "analysis" && path[1] && path.length === 2 && method === "GET") {
+      if (!user) return fail("Жүйеге кіріңіз", 401);
+      const record = store.analyses[path[1]];
+      if (!record || record.owner !== user.email) return fail("Талдау табылмады", 404);
+      return json(record.result);
     }
     if (path[0] === "analysis" && path[1] && path[2] === "export" && method === "GET") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
@@ -84,7 +91,32 @@ async function handle(request: Request) {
       if (role !== "admin" && template.owner !== user.email) return fail("Тек өз үлгіңізді жоя аласыз", 403);
       store.templates = store.templates.filter(t => t.id !== template.id); await writeStore(store); return json({ ok: true });
     }
+    if (path[0] === "history" && path[1] === "trash" && method === "GET") { if (!user) return fail("Жүйеге кіріңіз", 401); return json(store.historyTrash.filter(row => row.owner === user.email).reverse()); }
+    if (path[0] === "history" && path[1] === "trash" && (method === "POST" || method === "DELETE")) {
+      if (!user) return fail("Жүйеге кіріңіз", 401);
+      let body;
+      try { body = await request.json(); } catch { return fail("JSON сұрауының форматы қате"); }
+      if (!body || typeof body.type !== "string" || typeof body.title !== "string" || typeof body.meta !== "string") return fail("Тарих жазбасы көрсетілмеген");
+      const index = store.historyTrash.findIndex(row => row.owner === user.email && sameHistoryEntry(row, body));
+      if (index < 0) return fail("Себеттегі тарих жазбасы табылмады", 404);
+      const [entry] = store.historyTrash.splice(index, 1);
+      if (method === "POST") store.log.push({ owner: entry.owner, type: entry.type, tone: entry.tone, title: entry.title, meta: entry.meta, ...(entry.documentId ? { documentId: entry.documentId } : {}) });
+      await writeStore(store);
+      return json({ ok: true });
+    }
     if (path[0] === "history" && method === "GET") { if (!user) return fail("Жүйеге кіріңіз", 401); return json(store.log.filter(row => row.owner === user.email).reverse()); }
+    if (path[0] === "history" && method === "DELETE") {
+      if (!user) return fail("Жүйеге кіріңіз", 401);
+      let body;
+      try { body = await request.json(); } catch { return fail("JSON сұрауының форматы қате"); }
+      if (!body || typeof body.type !== "string" || typeof body.title !== "string" || typeof body.meta !== "string") return fail("Тарих жазбасы көрсетілмеген");
+      const index = store.log.findIndex(row => row.owner === user.email && sameHistoryEntry(row, body));
+      if (index < 0) return fail("Тарих жазбасы табылмады", 404);
+      const [entry] = store.log.splice(index, 1);
+      store.historyTrash.push({ ...entry, trashedAt: new Date().toISOString() });
+      await writeStore(store);
+      return json({ ok: true });
+    }
     if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ name, email, role: userRole }) => ({ name, email, role: userRole }))); }
     if (path[0] === "users" && path[1] && method === "PATCH") {
       if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);

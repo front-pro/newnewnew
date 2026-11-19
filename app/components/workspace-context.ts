@@ -1,20 +1,22 @@
 import type { DocumentDetail, DocumentVersion } from "../lib/documents";
 import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 
-export type Tab = "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
+export type Tab = "dashboard" | "profile" | "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
 export type CompanyWorkspace = { id: string; name: string; role: "admin" | "member" };
 export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
 export type Change = { type: string; title: string; description: string; a: string; b: string };
 export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[] };
-export type SessionUser = { id: string; name: string; email: string; role: string; platformRole?: "operator" | null; avatar?: string | null };
+export type SessionUser = { id: string; name: string; email: string; role: string; platformRole?: "operator" | null; company?: string; position?: string; avatar?: string | null };
 export type UserRow = { name: string; email: string; role: string };
-export type HistoryRow = { title: string; type: string; meta: string };
+export type HistoryRow = { title: string; type: string; meta: string; documentId?: string };
 export type AuthMode = "login" | "register" | "verify" | "reset" | "reset-confirm" | null;
 
 export type WorkspaceProps = {
   nav: [Tab, string][];
   tab: Tab;
   setTab: Dispatch<SetStateAction<Tab>>;
+  goBackTab: () => void;
+  canGoBack: boolean;
   workspaces: CompanyWorkspace[];
   setWorkspaces: Dispatch<SetStateAction<CompanyWorkspace[]>>;
   activeWorkspaceId: string | null;
@@ -27,9 +29,12 @@ export type WorkspaceProps = {
   a: string; setA: Dispatch<SetStateAction<string>>;
   b: string; setB: Dispatch<SetStateAction<string>>;
   report: Report | null;
+  analysisBusy: boolean;
+  analysisSources: { a: string; b: string };
   templates: Template[];
   editorText: string; setEditorText: Dispatch<SetStateAction<string>>;
   editorTitle: string; setEditorTitle: Dispatch<SetStateAction<string>>;
+  editorKey: number;
   documentId: string | null;
   editorVersion: number;
   editorBusy: boolean;
@@ -40,6 +45,7 @@ export type WorkspaceProps = {
   openTemplate: Template | null;
   notice: string; setNotice: Dispatch<SetStateAction<string>>;
   history: HistoryRow[];
+  setHistory: (history: HistoryRow[] | ((current: HistoryRow[]) => HistoryRow[])) => void;
   templateQuery: string;
   setTemplateQuery: Dispatch<SetStateAction<string>>;
   filteredTemplateCount: number;
@@ -49,6 +55,7 @@ export type WorkspaceProps = {
   templateBody: string; setTemplateBody: Dispatch<SetStateAction<string>>;
   templateAccess: string; setTemplateAccess: Dispatch<SetStateAction<string>>;
   startAnalysis: () => Promise<void>;
+  openAnalysis: (id: string) => Promise<void>;
   handleFile: (setter: (value: string) => void) => (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
   editTemplate: (template: Template) => Promise<void>;
   saveEditor: () => Promise<void>;

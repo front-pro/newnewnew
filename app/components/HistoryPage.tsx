@@ -1,29 +1,163 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { matchesSearch } from "../lib/search";
+import { formatHistoryTimestamp, historyTimestamp } from "../lib/history";
 import { useLanguage } from "./LanguageProvider";
-import SearchField from "./SearchField";
-import { card } from "./styles";
-import type { HistoryRow } from "./workspace-context";
+import Icon from "./Icon";
+import HistoryToolbar, { type HistorySortOrder } from "./HistoryToolbar";
+import HistoryActivity from "./HistoryActivity";
+import type { HistoryRow, WorkspaceProps } from "./workspace-context";
+type TrashedHistoryRow = HistoryRow & { trashedAt: string };
 
-export default function HistoryPage({ history }: { history: HistoryRow[] }) {
+export default function HistoryPage({ props }: { props: WorkspaceProps }) {
+  const { history } = props;
   const { tr, locale } = useLanguage();
+  const [scope, setScope] = useState<"all" | "documents" | "trash" | "favorites">("all");
+  const [folder, setFolder] = useState("all");
+  const [documents, setDocuments] = useState<{ id: string; folder?: string; favorite?: boolean }[]>([]);
+  const [trashEntries, setTrashEntries] = useState<TrashedHistoryRow[]>([]);
   const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<HistorySortOrder>("newest");
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!props.sessionUser) return;
+    const controller = new AbortController();
+    Promise.all([
+      fetch("/api/documents", { signal: controller.signal }).then(response => response.ok ? response.json() : []),
+      fetch("/api/history/trash", { signal: controller.signal }).then(response => response.ok ? response.json() : []),
+    ]).then(([active, trash]) => {
+      if (controller.signal.aborted) return;
+      setDocuments(Array.isArray(active) ? active : []);
+      setTrashEntries(Array.isArray(trash) ? trash : []);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [props.sessionUser]);
   const title = (row: HistoryRow) => row.type === "ЖИ талдауы" && /^Салыстыру #\d+$/.test(row.title) ? tr("Салыстыру #{id}", { id: row.title.split("#")[1] }) : tr(row.title);
-  const metadata = (meta: string) => meta.split(" · ").map(part => {
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(part)) {
-      return new Intl.DateTimeFormat(locale, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(`${part.replace(" ", "T")}:00Z`));
-    }
-    const changes = part.match(/^(\d+) өзгеріс анықталды$/);
-    return changes ? tr("{count} өзгеріс анықталды", { count: changes[1] }) : tr(part);
-  }).join(" · ");
-  const filtered = history.filter(row => matchesSearch(query, [row.title, title(row), row.type, tr(row.type), row.meta, metadata(row.meta)], locale));
+  const metadata = (meta: string) => {
+    const timestamp = historyTimestamp(meta);
+    const details = timestamp === null ? meta : meta.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: · )?/, "");
+    return details.split(" · ").filter(Boolean).map(part => {
+      const changes = part.match(/^(\d+) өзгеріс анықталды$/);
+      return changes ? tr("{count} өзгеріс анықталды", { count: changes[1] }) : tr(part);
+    }).join(" · ");
+  };
+  const typeOptions = [...new Set(history.map(row => row.type))].sort((a, b) => tr(a).localeCompare(tr(b), locale));
+  const documentById = new Map(documents.map(document => [document.id, document]));
+  const folderOptions = [...new Set(documents.map(document => document.folder).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, locale));
+  const filtered = history.filter(row => {
+    const isDocument = row.type === "Құжат";
+    const isFavorite = Boolean(row.documentId && documentById.get(row.documentId)?.favorite);
+    const rowFolder = row.documentId ? documentById.get(row.documentId)?.folder || "" : "";
+    return (scope === "all" || (scope === "documents" && isDocument) || (scope === "favorites" && isDocument && isFavorite))
+      && (folder === "all" || (isDocument && rowFolder === folder))
+      && (typeFilter === "all" || row.type === typeFilter)
+      && matchesSearch(query, [row.title, title(row), row.type, tr(row.type), row.meta, metadata(row.meta)], locale);
+  });
+  const sorted = filtered.map((row, index) => ({ row, index, timestamp: historyTimestamp(row.meta) })).sort((a, b) => {
+    if (sortOrder === "title") return title(a.row).localeCompare(title(b.row), locale) || a.index - b.index;
+    if (a.timestamp === null || b.timestamp === null) return a.timestamp === b.timestamp ? a.index - b.index : a.timestamp === null ? 1 : -1;
+    const byDate = sortOrder === "newest" ? b.timestamp - a.timestamp : a.timestamp - b.timestamp;
+    return byDate || a.index - b.index;
+  }).map(item => item.row);
+  const trashedFiltered = trashEntries.filter(row => {
+    const rowFolder = row.documentId ? documentById.get(row.documentId)?.folder || "" : "";
+    return (folder === "all" || rowFolder === folder)
+      && (typeFilter === "all" || row.type === typeFilter)
+      && matchesSearch(query, [row.title, title(row), row.type, tr(row.type), row.meta, metadata(row.meta)], locale);
+  });
+  const visibleRows: HistoryRow[] = scope === "trash" ? trashedFiltered : sorted;
+  const analysisCount = history.filter(row => row.type === "ЖИ талдауы").length;
+  const documentCount = history.filter(row => row.type === "Құжат").length;
+  const hasActiveFilters = Boolean(query.trim()) || typeFilter !== "all" || scope !== "all" || folder !== "all";
   return <>
     <div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tr("Әрекеттер тарихы")}</h1><p className="mt-1 text-slate-500">{tr("Сақталған талдаулар мен құжаттар журналы")}</p></div>
-    <SearchField value={query} onChange={setQuery} label={tr("Тарихтан іздеу")} placeholder={tr("Атауы, әрекет түрі немесе күні бойынша іздеу…")} count={filtered.length} total={history.length} />
-    <section className={`${card} divide-y divide-slate-100`} aria-label={tr("Әрекеттер тізімі")}>
-      {filtered.length ? <ul className="divide-y divide-slate-100">{filtered.map((row, i) => <li key={i} className="space-y-1 py-4 first:pt-0 last:pb-0"><p className="break-words text-sm font-semibold">{title(row)}</p><p className="break-words text-xs text-slate-500">{tr(row.type)} · {metadata(row.meta)}</p></li>)}</ul> : <div className="p-6 text-center text-sm text-slate-500">{tr(query.trim() ? "Тарихтан ештеңе табылмады. Іздеу сөзін өзгертіңіз." : "Тарих бос. Талдауды іске қосыңыз немесе құжат сақтаңыз.")}</div>}
+    <div role="group" className="grid gap-3 sm:grid-cols-3" aria-label={tr("Тарих қорытындысы")}>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{tr("Барлық әрекет")}</p><p className="mt-1 text-2xl font-bold text-slate-900">{history.length}</p></div>
+      <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4"><p className="text-xs font-medium text-blue-700">{tr("Талдаулар")}</p><p className="mt-1 text-2xl font-bold text-blue-800">{analysisCount}</p></div>
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"><p className="text-xs font-medium text-emerald-700">{tr("Құжат әрекеттері")}</p><p className="mt-1 text-2xl font-bold text-emerald-800">{documentCount}</p></div>
+    </div>
+    <div className="flex flex-wrap items-center gap-3" role="group" aria-label={tr("Құжаттарды сүзу")}>
+      <button type="button" aria-pressed={scope === "documents"} onClick={() => setScope(scope === "documents" ? "all" : "documents")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "documents" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="file" className="size-4"/>{tr("Құжаттар")}</button>
+      <button type="button" aria-pressed={scope === "trash"} onClick={() => setScope(scope === "trash" ? "all" : "trash")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "trash" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="trash" className="size-4"/>{tr("Себет")}<span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{trashEntries.length}</span></button>
+      <button type="button" aria-pressed={scope === "favorites"} onClick={() => setScope(scope === "favorites" ? "all" : "favorites")} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${scope === "favorites" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}><Icon name="star" className="size-4"/>{tr("Таңдаулылар")}</button>
+      <label className="flex items-center gap-2 text-sm text-slate-500"><Icon name="folder" className="size-4"/>{tr("Қалта")}<select aria-label={tr("Қалта")} value={folder} onChange={event => setFolder(event.target.value)} className="rounded-xl border border-slate-200 bg-white p-2 text-sm text-slate-800"><option value="all">{tr("Барлық қалталар")}</option><option value="">{tr("Қалтасыз")}</option>{folderOptions.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+    </div>
+    <HistoryToolbar query={query} onQueryChange={setQuery} typeFilter={typeFilter} onTypeFilterChange={setTypeFilter} typeOptions={typeOptions} sortOrder={sortOrder} onSortOrderChange={setSortOrder} count={visibleRows.length} total={scope === "trash" ? trashEntries.length : history.length} />
+    <section aria-label={tr("Әрекеттер тізімі")}>
+      {visibleRows.length ? <ul className="space-y-3">{visibleRows.map((row, i) => {
+        const comparisonId = row.type === "ЖИ талдауы" ? row.title.match(/^Салыстыру #(\d+)$/)?.[1] : undefined;
+        const rowKey = `${row.type}:${row.documentId || ""}:${row.title}:${row.meta}:${i}`;
+        const timestamp = historyTimestamp(row.meta);
+        const dateLabel = timestamp === null ? "" : formatHistoryTimestamp(timestamp, locale);
+        const details = metadata(row.meta);
+        const inTrash = scope === "trash";
+        const remove = async () => {
+          setDeletingKey(rowKey);
+          try {
+            const response = await fetch(inTrash ? "/api/history/trash" : "/api/history", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: row.type, title: row.title, meta: row.meta, documentId: row.documentId }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Тарих жазбасын жою мүмкін болмады");
+            if (inTrash) {
+              setTrashEntries(current => current.filter(item => !(item.type === row.type && item.title === row.title && item.meta === row.meta && item.documentId === row.documentId)));
+              props.setNotice(tr("Тарих жазбасы біржола жойылды."));
+            } else {
+              props.setHistory(current => {
+                const index = current.findIndex(item => item.type === row.type && item.title === row.title && item.meta === row.meta && item.documentId === row.documentId);
+                return index < 0 ? current : current.filter((_, itemIndex) => itemIndex !== index);
+              });
+              setTrashEntries(current => [{ ...row, trashedAt: new Date().toISOString() }, ...current]);
+              props.setNotice(tr("Тарих жазбасы себетке жіберілді."));
+            }
+          } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+          finally { setDeletingKey(null); }
+        };
+        const restore = async () => {
+          setDeletingKey(rowKey);
+          try {
+            const response = await fetch("/api/history/trash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: row.type, title: row.title, meta: row.meta, documentId: row.documentId }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Тарих жазбасын қалпына келтіру мүмкін болмады");
+            setTrashEntries(current => current.filter(item => !(item.type === row.type && item.title === row.title && item.meta === row.meta && item.documentId === row.documentId)));
+            props.setHistory(current => [row, ...current]);
+            props.setNotice(tr("Тарих жазбасы қалпына келтірілді."));
+          } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+          finally { setDeletingKey(null); }
+        };
+        const favorite = row.documentId ? Boolean(documentById.get(row.documentId)?.favorite) : false;
+        const toggleFavorite = row.type === "Құжат" && row.documentId && !inTrash ? async () => {
+          const nextFavorite = !favorite;
+          setDeletingKey(rowKey);
+          try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(row.documentId!)}/organization`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ favorite: nextFavorite }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Таңдаулы күйін өзгерту мүмкін болмады");
+            setDocuments(current => current.map(document => document.id === row.documentId ? { ...document, favorite: nextFavorite } : document));
+          } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+          finally { setDeletingKey(null); }
+        } : undefined;
+        const open = !inTrash && (comparisonId || row.type === "Құжат") ? async () => {
+          setOpeningKey(rowKey);
+          try {
+            if (comparisonId) { await props.openAnalysis(comparisonId); return; }
+            const response = await fetch(`/api/documents${row.documentId ? `/${encodeURIComponent(row.documentId)}` : ""}`);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Құжат ашылмады");
+            const document = row.documentId ? data : data.find((item: { title: string }) => item.title === row.title);
+            if (!document) throw new Error("Құжат табылмады");
+            if (!row.documentId) {
+              const detailResponse = await fetch(`/api/documents/${encodeURIComponent(document.id)}`);
+              const detail = await detailResponse.json();
+              if (!detailResponse.ok) throw new Error(detail.error || "Құжат ашылмады");
+              props.openDocument(detail);
+            } else props.openDocument(document);
+          } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+          finally { setOpeningKey(null); }
+        } : undefined;
+        return <HistoryActivity key={rowKey} row={row} title={title(row)} dateLabel={dateLabel} details={details} onOpen={open} onDelete={remove} onRestore={inTrash ? restore : undefined} onToggleFavorite={toggleFavorite} favorite={favorite} deleteLabel={inTrash ? "Біржола жою" : "Тарихтан жою"} opening={openingKey === rowKey} disabled={openingKey !== null || deletingKey !== null} />;
+      })}</ul> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"><Icon name="history" className="size-6" /></span><h2 className="mt-4 text-base font-semibold text-slate-800">{tr(hasActiveFilters ? "Сүзгіге сай әрекет жоқ" : "Тарих бос")}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{tr(hasActiveFilters ? "Іздеу сөзін өзгертіңіз немесе сүзгілерді тазалаңыз." : "Талдауды іске қосыңыз немесе құжатты сақтаңыз — әрекеттер осында көрінеді.")}</p>{hasActiveFilters ? <button type="button" onClick={() => { setQuery(""); setTypeFilter("all"); setScope("all"); setFolder("all"); }} className="mt-4 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">{tr("Сүзгілерді тазалау ×")}</button> : <button type="button" onClick={() => props.setTab("editor")} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{tr("Құжат редакторын ашу")}</button>}</div>}
     </section>
   </>;
 }

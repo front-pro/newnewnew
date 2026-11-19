@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { summarizeDocument } from "../lib/documents";
+import { editorHtmlToText, sanitizeEditorHtml } from "../lib/editor-content";
 import type { SavedDocument } from "../lib/documents";
 import { appendAuditEvent, currentUser, readStore, stamp, writeStore } from "./auth/_lib";
 import type { ApprovalFlow, Store, User } from "./auth/_lib";
@@ -18,6 +19,7 @@ export async function handleDocumentRequest(request: Request, path: string[]) {
 export async function handleDocuments(request: Request, path: string[], store: Store, user: User | null, workspaceScope?: string | null) {
   if (!user) return fail("Жүйеге кіріңіз", 401);
   const method = request.method;
+  const url = new URL(request.url);
   const permission = (document: SavedDocument): "owner" | "editor" | "commenter" | "viewer" | "none" => {
     if (document.workspaceId) {
       const isMember = store.memberships.some(item => item.workspaceId === document.workspaceId && item.userId === user.id);
@@ -31,8 +33,59 @@ export async function handleDocuments(request: Request, path: string[], store: S
     return document.shares?.find(item => item.email === user.email)?.permission || "none";
   };
   const canEdit = (document: SavedDocument) => ["owner", "editor"].includes(permission(document));
-  const owned = store.documents.filter(document => permission(document) !== "none" && (workspaceScope === undefined || (workspaceScope === null ? !document.workspaceId : document.workspaceId === workspaceScope)));
+  const owned = store.documents.filter(document => !document.deletedAt && permission(document) !== "none" && (workspaceScope === undefined || (workspaceScope === null ? !document.workspaceId : document.workspaceId === workspaceScope)));
 
+  if (path.length === 1 && path[0] === "trash" && method === "GET") {
+    return json(store.documents.filter(document => document.deletedAt && permission(document) === "owner" && (workspaceScope === undefined || (workspaceScope === null ? !document.workspaceId : document.workspaceId === workspaceScope))).sort((a, b) => (b.deletedAt || "").localeCompare(a.deletedAt || "")).map(document => ({ ...summarizeDocument(document, user.id), deletedAt: document.deletedAt, permission: "owner" })));
+  }
+  if (path.length === 2 && path[1] === "restore" && method === "POST") {
+    const document = store.documents.find(item => item.id === path[0] && item.deletedAt && permission(item) === "owner");
+    if (!document) return fail("Себеттегі құжат табылмады", 404);
+    delete document.deletedAt;
+    document.updatedAt = new Date().toISOString();
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.restore", resourceType: "document", resourceId: document.id });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document) });
+  }
+  if (path.length === 2 && path[1] === "permanent" && method === "DELETE") {
+    const document = store.documents.find(item => item.id === path[0] && item.deletedAt && permission(item) === "owner");
+    if (!document) return fail("Себеттегі құжат табылмады", 404);
+    store.documents = store.documents.filter(item => item !== document);
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.delete_permanent", resourceType: "document", resourceId: document.id, metadata: { title: document.title } });
+    return json({ ok: true });
+  }
+
+  if (path.length === 2 && path[1] === "organization" && method === "PATCH") {
+    const document = owned.find(item => item.id === path[0]);
+    if (!document) return fail("Құжат табылмады", 404);
+    let body; try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    if (!body || typeof body !== "object") return fail("Сұрау пішімі қате");
+    if (body.folder !== undefined && (typeof body.folder !== "string" || body.folder.length > 80)) return fail("Қалта атауы 80 таңбадан аспауы керек");
+    if (body.tags !== undefined && (!Array.isArray(body.tags) || body.tags.length > 12 || body.tags.some((tag: unknown) => typeof tag !== "string" || tag.length > 32))) return fail("Ең көбі 12 тег, әрқайсысы 32 таңбаға дейін");
+    if (body.favorite !== undefined && typeof body.favorite !== "boolean") return fail("Сұрау пішімі қате");
+    const previous = document.organization?.[user.id] || { folder: "", tags: [], favorite: false };
+    document.organization = { ...document.organization, [user.id]: { folder: body.folder === undefined ? previous.folder : body.folder.trim(), tags: body.tags === undefined ? previous.tags : [...new Set<string>(body.tags.map((tag: string) => tag.trim()).filter(Boolean))], favorite: body.favorite === undefined ? previous.favorite : body.favorite } };
+    await writeStore(store);
+    return json(summarizeDocument(document, user.id));
+  }
+
+  if (path.length === 2 && path[1] === "metadata" && method === "PATCH") {
+    const document = owned.find(item => item.id === path[0] && canEdit(item));
+    if (!document) return fail("Құжат табылмады", 404);
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    if (!body || typeof body !== "object" || !("dueDate" in body)) return fail("Сұрау пішімі қате");
+    const dueDate = body.dueDate;
+    const parsedDate = typeof dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? new Date(`${dueDate}T00:00:00.000Z`) : null;
+    if (dueDate !== null && (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dueDate)) {
+      return fail("Мерзім күнін дұрыс енгізіңіз");
+    }
+    document.dueDate = dueDate || undefined;
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.deadline_update", resourceType: "document", resourceId: document.id, metadata: { dueDate: document.dueDate || null } });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document) });
+  }
   if (path.length === 2 && path[1] === "approval" && method === "POST") {
     const document = owned.find(item => item.id === path[0] && canEdit(item));
     if (!document) return fail("Құжат табылмады", 404);
@@ -76,11 +129,11 @@ export async function handleDocuments(request: Request, path: string[], store: S
       delete document.approvalId;
     }
     store.docs[document.owner] = restored.text; store.versions[document.owner] = restored.version;
-    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, meta: `${stamp()} · v${restored.version} · v${versionNumber} нұсқасынан қалпына келтірілді` });
+    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, documentId: document.id, meta: `${stamp()} · v${restored.version} · v${versionNumber} нұсқасынан қалпына келтірілді` });
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.restore_version", resourceType: "document", resourceId: document.id, metadata: { restoredFrom: versionNumber, version: restored.version } });
     const approval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId) : undefined;
-    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
   }
 
   if (path.length === 2 && path[1] === "comments" && method === "GET") {
@@ -96,7 +149,10 @@ export async function handleDocuments(request: Request, path: string[], store: S
     try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text || text.length > 5000) return fail("Пікір 1–5 000 таңба болуы керек");
-    const comment = { id: randomUUID(), author: user.email, text, createdAt: new Date().toISOString() };
+    const clause = typeof body.clause === "string" ? body.clause.trim() : "";
+    const version = clause ? document.versions.find(v => v.version === Number(body.version)) : undefined;
+    if (clause && (!/^\d+(?:\.\d+)*$/.test(clause) || clause.length > 40 || !version || !version.text.split(/\r?\n/).some(line => line.trim().match(/^(\d+(?:\.\d+)*)\.?\s/)?.[1] === clause))) return fail("Тармақ нөмірі немесе нұсқа табылмады");
+    const comment = { ...(clause ? { clause, version: version!.version } : {}), id: randomUUID(), author: user.email, text, createdAt: new Date().toISOString() };
     document.comments = [...(document.comments || []), comment];
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.comment", resourceType: "document", resourceId: document.id, metadata: { commentId: comment.id } });
@@ -166,7 +222,15 @@ export async function handleDocuments(request: Request, path: string[], store: S
   }
 
   if (!path.length && method === "GET") {
-    return json(owned.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document), permission: permission(document) })));
+    const terms = (url.searchParams.get("q") || "").trim().slice(0, 120).toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const matching = owned.filter(document => {
+      if (!terms.length) return true;
+      const latest = document.versions.at(-1);
+      const organization = document.organization?.[user.id];
+      const searchable = [document.title, editorHtmlToText(latest?.text || ""), organization?.folder || "", ...(organization?.tags || [])].join("\n").toLocaleLowerCase();
+      return terms.every(term => searchable.includes(term));
+    });
+    return json(matching.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(document => ({ ...summarizeDocument(document, user.id), permission: permission(document) })));
   }
   if (path.length === 1 && path[0] === "me" && method === "GET") {
     const latest = owned.filter(document => document.owner === user.email).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -177,30 +241,38 @@ export async function handleDocuments(request: Request, path: string[], store: S
     if (!document) return fail("Құжат табылмады", 404);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.read", resourceType: "document", resourceId: document.id, metadata: { version: document.versions[document.versions.length - 1].version } });
     const approval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId) : undefined;
-    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document), shares: document.shares || [], versions: document.versions, approval });
   }
   if (path.length === 1 && path[0] !== "me" && method === "DELETE") {
     const document = owned.find(item => item.id === path[0] && permission(item) === "owner");
     if (!document) return fail("Құжат табылмады", 404);
-    store.documents = store.documents.filter(item => item !== document);
+    const pendingApproval = document.approvalId ? store.approvals.find(flow => flow.id === document.approvalId && flow.status === "pending") : undefined;
+    if (pendingApproval) pendingApproval.status = "stale";
+    delete document.approvalId;
+    document.deletedAt = new Date().toISOString();
     const latest = owned.filter(item => item !== document).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (latest) {
       const snapshot = latest.versions[latest.versions.length - 1];
       store.docs[user.email] = snapshot.text;
       store.versions[user.email] = snapshot.version;
     } else { delete store.docs[user.email]; delete store.versions[user.email]; }
-    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, meta: `${stamp()} · жойылды` });
+    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title: document.title, documentId: document.id, meta: `${stamp()} · себетке жіберілді` });
     await writeStore(store);
-    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.delete", resourceType: "document", resourceId: document.id, metadata: { title: document.title } });
+    if (pendingApproval) await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "approval.stale", resourceType: "approval", resourceId: pendingApproval.id, metadata: { documentId: document.id, reason: "document_trashed" } });
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.trash", resourceType: "document", resourceId: document.id, metadata: { title: document.title } });
     return json({ ok: true });
   }
   if (!path.length && method === "POST") {
     let body;
     try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
     if (!body || typeof body !== "object" || typeof body.text !== "string") return fail("Құжат мәтінін енгізіңіз");
-    const text: string = body.text;
+    const rawText: string = body.text;
+    if (rawText.length > 8_000_000) return fail("Құжат тым үлкен (макс. 8 МБ)", 413);
+    if (rawText.length > 200_000 && !/<img\b/i.test(rawText)) return fail("Құжат тым үлкен (макс. 200 000 таңба)", 413);
+    const text = sanitizeEditorHtml(rawText);
     const title = typeof body.title === "string" ? body.title.trim() : "Құжат.txt";
     if (!text.trim()) return fail("Құжат мәтіні бос");
+    if (editorHtmlToText(text).length > 200_000) return fail("Құжат мәтіні тым үлкен (макс. 200 000 таңба)", 413);
     if (text.length > 200000) return fail("Құжат тым үлкен (макс. 200 000 таңба)", 413);
     if (!title || title.length > 200) return fail("Атауы 1–200 таңба болуы керек");
     const existing = body.documentId ? owned.find(item => item.id === body.documentId && canEdit(item)) : undefined;
@@ -237,10 +309,10 @@ export async function handleDocuments(request: Request, path: string[], store: S
     // Retain compatibility with the previous editor endpoint.
     store.docs[user.email] = text;
     store.versions[user.email] = version;
-    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title, meta: `${stamp()} · v${version}` });
+    store.log.push({ owner: user.email, type: "Құжат", tone: "green", title, documentId: document.id, meta: `${stamp()} · v${version}` });
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: existing ? "document.update" : "document.create", resourceType: "document", resourceId: document.id, metadata: { version } });
-    return json({ ...summarizeDocument(document), permission: permission(document), shares: document.shares || [], versions: document.versions }, existing ? 200 : 201);
+    return json({ ...summarizeDocument(document, user.id), permission: permission(document), shares: document.shares || [], versions: document.versions }, existing ? 200 : 201);
   }
   return fail("API маршрут табылмады", 404);
 }
@@ -255,7 +327,7 @@ export async function handleApprovalRequest(request: Request, path: string[]) {
       const step = flow.steps.find(item => item.approverId === user.id);
       const version = document?.versions.find(item => item.version === flow.version);
       const inWorkspace = !flow.workspaceId || store.memberships.some(item => item.workspaceId === flow.workspaceId && item.userId === user.id);
-      return document && version && step && inWorkspace ? { ...flow, step, document: { id: document.id, title: version.title, workspaceId: document.workspaceId, text: version.text } } : null;
+      return document && !document.deletedAt && version && step && inWorkspace ? { ...flow, step, document: { id: document.id, title: version.title, workspaceId: document.workspaceId, text: version.text } } : null;
     }).filter(Boolean));
   }
   if (path.length === 2 && path[1] === "decision" && request.method === "POST") {
