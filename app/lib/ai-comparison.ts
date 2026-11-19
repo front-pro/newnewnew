@@ -52,13 +52,13 @@ const schema = {
   required: ["summary", "overallRisk", "findings"]
 };
 
-export async function analyzeComparison(changes: ComparisonChangeInput[], language: "kk" | "ru" | "en", signal?: AbortSignal): Promise<AiComparison> {
+const severityRank = { low: 0, medium: 1, high: 2 } as const;
+const languageName = (language: "kk" | "ru" | "en") => language === "ru" ? "Russian" : language === "en" ? "English" : "Kazakh";
+
+async function analyzeBatch(changes: ComparisonChangeInput[], language: "kk" | "ru" | "en", signal?: AbortSignal): Promise<AiComparison> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new AiComparisonError("ИИ агент іске қосылмаған: серверде OPENAI_API_KEY орнатылмаған.");
-  if (changes.length > 100) throw new AiComparisonError("ИИ агент бір талдауда 100-ге дейінгі айырмашылықты түсіндіреді. Қалған айырмашылықтар салыстыру тізімінде толық көрсетіледі.");
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-  const languageName = language === "ru" ? "Russian" : language === "en" ? "English" : "Kazakh";
-  const payload = changes.map(({ id, type, title, description, a, b, beforeText, afterText }) => ({ id, type, title, description, a, b, beforeText, afterText }));
   let response: Response;
   try {
     response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -68,7 +68,7 @@ export async function analyzeComparison(changes: ComparisonChangeInput[], langua
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        max_completion_tokens: 10000,
+        max_completion_tokens: 5000,
         response_format: { type: "json_schema", json_schema: { name: "document_change_analysis", strict: true, schema } },
         messages: [
           {
@@ -77,7 +77,7 @@ export async function analyzeComparison(changes: ComparisonChangeInput[], langua
           },
           {
             role: "user",
-            content: JSON.stringify({ outputLanguage: languageName, task: "For every detected change, state what changed, its practical impact, severity, and a concrete review recommendation. The A/B references and excerpts are evidence; do not skip an id.", changes: payload })
+            content: JSON.stringify({ outputLanguage: languageName(language), task: "For every detected change, state what changed, its practical impact, severity, and a concrete review recommendation. The A/B references and excerpts are evidence; do not skip an id.", changes })
           }
         ]
       })
@@ -94,7 +94,7 @@ export async function analyzeComparison(changes: ComparisonChangeInput[], langua
   }
   const body = await response.json() as { choices?: { message?: { content?: string | null; refusal?: string } }[] };
   const message = body.choices?.[0]?.message;
-  if (message?.refusal) throw new AiComparisonError("ИИ құжаттарды талдаудан бас тартлаа.");
+  if (message?.refusal) throw new AiComparisonError("ИИ құжаттарды талдаудан бас тартты.");
   if (!message?.content) throw new AiComparisonError("ИИ талдауы бос нәтиже қайтарды.");
   let result: AiComparison;
   try { result = JSON.parse(message.content) as AiComparison; }
@@ -104,4 +104,27 @@ export async function analyzeComparison(changes: ComparisonChangeInput[], langua
     throw new AiComparisonError("ИИ барлық өзгеріске толық түсініктеме бере алмады. Талдауды қайталап көріңіз.");
   }
   return result;
+}
+
+export async function analyzeComparison(changes: ComparisonChangeInput[], language: "kk" | "ru" | "en", signal?: AbortSignal): Promise<AiComparison> {
+  if (!changes.length) return { summary: "Айырмашылық табылған жоқ.", overallRisk: "low", findings: [] };
+  if (changes.length > 1000) throw new AiComparisonError("ИИ талдауы бір ретте 1 000 өзгеріске дейін қолдайды. Негізгі салыстыру барлық айырмашылықты көрсетеді.");
+  const batches: ComparisonChangeInput[][] = [];
+  for (let i = 0; i < changes.length; i += 25) batches.push(changes.slice(i, i + 25));
+  const results: AiComparison[] = new Array(batches.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(3, batches.length) }, async () => {
+    while (cursor < batches.length) {
+      const index = cursor++;
+      results[index] = await analyzeBatch(batches[index], language, signal);
+    }
+  });
+  await Promise.all(workers);
+  const findings = results.flatMap(result => result.findings);
+  if (findings.length !== changes.length || new Set(findings.map(item => item.changeId)).size !== changes.length) {
+    throw new AiComparisonError("ИИ агент кейбір өзгерістерге түсініктеме бере алмады. Қайталап көріңіз.");
+  }
+  const overallRisk = results.reduce<AiComparison["overallRisk"]>((risk, result) => severityRank[result.overallRisk] > severityRank[risk] ? result.overallRisk : risk, "low");
+  const summary = results.length === 1 ? results[0].summary : results.map((result, index) => (index + 1) + ". " + result.summary).join("\n");
+  return { summary, overallRisk, findings };
 }
