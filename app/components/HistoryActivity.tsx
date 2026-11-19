@@ -12,12 +12,14 @@ type Props = {
   onOpen?: () => void;
   onDelete?: () => void;
   onRestore?: () => void;
+  onToggleFavorite?: () => void;
+  favorite?: boolean;
   deleteLabel?: string;
   opening?: boolean;
   disabled?: boolean;
 };
 
-export default function HistoryActivity({ row, title, dateLabel, details, onOpen, onDelete, onRestore, deleteLabel = "Тарихтан жою", opening = false, disabled = false }: Props) {
+export default function HistoryActivity({ row, title, dateLabel, details, onOpen, onDelete, onRestore, onToggleFavorite, favorite = false, deleteLabel = "Тарихтан жою", opening = false, disabled = false }: Props) {
   const { tr } = useLanguage();
   const icon: IconName = row.type === "ЖИ талдауы" ? "compare" : row.type === "Құжат" ? "file" : "history";
   const tone = row.type === "ЖИ талдауы" ? "bg-blue-50 text-blue-700" : row.type === "Құжат" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600";
@@ -36,6 +38,7 @@ export default function HistoryActivity({ row, title, dateLabel, details, onOpen
 
   return <li className="list-none">
     <div className="flex items-center gap-2">
+      {onToggleFavorite && <button type="button" onClick={onToggleFavorite} disabled={disabled} aria-label={tr(favorite ? "Таңдаулылардан алып тастау" : "Таңдаулыларға қосу")} aria-pressed={favorite} title={tr(favorite ? "Таңдаулылардан алып тастау" : "Таңдаулыларға қосу")} className={`flex size-10 shrink-0 items-center justify-center rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:opacity-50 ${favorite ? "text-amber-500 hover:bg-amber-50" : "text-slate-300 hover:bg-amber-50 hover:text-amber-500"}`}><Icon name="star" className="size-4" fill={favorite ? "currentColor" : "none"}/></button>}
       {onOpen ? <button type="button" onClick={onOpen} disabled={disabled} aria-busy={opening} aria-label={`${tr(opening ? "Ашылуда…" : "Ашу")}: ${title}`} className="group flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md disabled:cursor-wait disabled:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:gap-4 sm:p-5">{content}</button> : <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:gap-4 sm:p-5">{content}</div>}
       {onRestore && <button type="button" onClick={onRestore} disabled={disabled} aria-label={`${tr("Қалпына келтіру")}: ${title}`} title={tr("Қалпына келтіру")} className="flex size-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"><Icon name="undo" className="size-4"/></button>}
       {onDelete && <button type="button" onClick={onDelete} disabled={disabled} aria-label={`${tr(deleteLabel)}: ${title}`} title={tr(deleteLabel)} className="flex size-10 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50"><Icon name="trash" className="size-4"/></button>}

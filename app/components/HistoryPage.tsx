@@ -126,6 +126,18 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
           } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
           finally { setDeletingKey(null); }
         };
+        const favorite = row.documentId ? Boolean(documentById.get(row.documentId)?.favorite) : false;
+        const toggleFavorite = row.type === "Құжат" && row.documentId && !inTrash ? async () => {
+          const nextFavorite = !favorite;
+          setDeletingKey(rowKey);
+          try {
+            const response = await fetch(`/api/documents/${encodeURIComponent(row.documentId!)}/organization`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ favorite: nextFavorite }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Таңдаулы күйін өзгерту мүмкін болмады");
+            setDocuments(current => current.map(document => document.id === row.documentId ? { ...document, favorite: nextFavorite } : document));
+          } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+          finally { setDeletingKey(null); }
+        } : undefined;
         const open = !inTrash && (comparisonId || row.type === "Құжат") ? async () => {
           setOpeningKey(rowKey);
           try {
@@ -144,7 +156,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
           } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
           finally { setOpeningKey(null); }
         } : undefined;
-        return <HistoryActivity key={rowKey} row={row} title={title(row)} dateLabel={dateLabel} details={details} onOpen={open} onDelete={remove} onRestore={inTrash ? restore : undefined} deleteLabel={inTrash ? "Біржола жою" : "Тарихтан жою"} opening={openingKey === rowKey} disabled={openingKey !== null || deletingKey !== null} />;
+        return <HistoryActivity key={rowKey} row={row} title={title(row)} dateLabel={dateLabel} details={details} onOpen={open} onDelete={remove} onRestore={inTrash ? restore : undefined} onToggleFavorite={toggleFavorite} favorite={favorite} deleteLabel={inTrash ? "Біржола жою" : "Тарихтан жою"} opening={openingKey === rowKey} disabled={openingKey !== null || deletingKey !== null} />;
       })}</ul> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"><Icon name="history" className="size-6" /></span><h2 className="mt-4 text-base font-semibold text-slate-800">{tr(hasActiveFilters ? "Сүзгіге сай әрекет жоқ" : "Тарих бос")}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{tr(hasActiveFilters ? "Іздеу сөзін өзгертіңіз немесе сүзгілерді тазалаңыз." : "Талдауды іске қосыңыз немесе құжатты сақтаңыз — әрекеттер осында көрінеді.")}</p>{hasActiveFilters ? <button type="button" onClick={() => { setQuery(""); setTypeFilter("all"); setScope("all"); setFolder("all"); }} className="mt-4 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">{tr("Сүзгілерді тазалау ×")}</button> : <button type="button" onClick={() => props.setTab("editor")} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{tr("Құжат редакторын ашу")}</button>}</div>}
     </section>
   </>;
