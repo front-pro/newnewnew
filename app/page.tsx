@@ -156,7 +156,7 @@ function Workspace() {
             return;
         try {
             const imported = await readDocumentFile(file);
-            setter(/<(?:p|div|table|tr|td|th)\\b/i.test(imported) ? editorHtmlToText(imported) : imported);
+            setter(/<(?:p|div|table|tr|td|th)\b/i.test(imported) ? editorHtmlToText(imported) : imported);
             setNotice(tr("{p0} файлы жүктелді", { p0: file.name }));
         }
         catch (error) {
