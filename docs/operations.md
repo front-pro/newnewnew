@@ -14,6 +14,7 @@
 - `KT_EMAIL_DELIVERY_URL` and `KT_EMAIL_DELIVERY_TOKEN`: HTTPS JSON endpoint and bearer token for verification and password-reset emails. The endpoint receives `{ "to", "subject", "text" }` and must return a successful HTTP status only after accepting delivery.
 - `KT_PLATFORM_OPERATOR_EMAILS`: comma-separated addresses that receive the separate platform-operator flag.
 - `KT_EMAIL_DEV_TOKENS=1`: test-only switch that returns email tokens in API responses. Never enable it in a public production environment.
+- `OPENAI_API_KEY`: optional server-only OpenAI API key used by the AI-assisted A/B document comparison. `OPENAI_MODEL` optionally selects a supported model; defaults to `gpt-4o-mini`. The A/B document text and detected changes are sent to OpenAI only when the user selects the AI analysis action. Without the key, the normal deterministic comparison continues to work and the AI result explains that configuration is missing.
 
 Registration and password reset return `503` in production if email delivery is not configured. Local development can complete those flows by entering the development token returned by the API.
 
