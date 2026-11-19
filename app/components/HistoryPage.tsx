@@ -11,6 +11,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   const { history } = props;
   const { tr, locale } = useLanguage();
   const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const title = (row: HistoryRow) => row.type === "ЖИ талдауы" && /^Салыстыру #\d+$/.test(row.title) ? tr("Салыстыру #{id}", { id: row.title.split("#")[1] }) : tr(row.title);
   const metadata = (meta: string) => meta.split(" · ").map(part => {
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(part)) {
@@ -19,10 +20,12 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
     const changes = part.match(/^(\d+) өзгеріс анықталды$/);
     return changes ? tr("{count} өзгеріс анықталды", { count: changes[1] }) : tr(part);
   }).join(" · ");
-  const filtered = history.filter(row => matchesSearch(query, [row.title, title(row), row.type, tr(row.type), row.meta, metadata(row.meta)], locale));
+  const typeOptions = [...new Set(history.map(row => row.type))].sort((a, b) => tr(a).localeCompare(tr(b), locale));
+  const filtered = history.filter(row => (typeFilter === "all" || row.type === typeFilter) && matchesSearch(query, [row.title, title(row), row.type, tr(row.type), row.meta, metadata(row.meta)], locale));
   return <>
     <div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tr("Әрекеттер тарихы")}</h1><p className="mt-1 text-slate-500">{tr("Сақталған талдаулар мен құжаттар журналы")}</p></div>
     <SearchField value={query} onChange={setQuery} label={tr("Тарихтан іздеу")} placeholder={tr("Атауы, әрекет түрі немесе күні бойынша іздеу…")} count={filtered.length} total={history.length} />
+    <label className="block max-w-xs space-y-2 text-xs font-medium text-slate-500">{tr("Әрекет түрі")}<select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800"><option value="all">{tr("Барлық әрекеттер")}</option>{typeOptions.map(type => <option key={type} value={type}>{tr(type)}</option>)}</select></label>
     <section className={`${card} divide-y divide-slate-100`} aria-label={tr("Әрекеттер тізімі")}>
       {filtered.length ? <ul className="divide-y divide-slate-100">{filtered.map((row, i) => {
         const comparisonId = row.type === "ЖИ талдауы" ? row.title.match(/^Салыстыру #(\d+)$/)?.[1] : undefined;
