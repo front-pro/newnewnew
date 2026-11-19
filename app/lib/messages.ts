@@ -1,5 +1,7 @@
 // UI messages: Kazakh keys, Russian and English values.
 export const messages: Record<string, readonly [string, string]> = {
+  "Бүйір панельді ашу": ["Открыть боковую панель", "Open sidebar"],
+  "Бүйір панельді ықшамдау": ["Свернуть боковую панель", "Collapse sidebar"],
   "Компаниялар": [
     "Компании",
     "Companies"
