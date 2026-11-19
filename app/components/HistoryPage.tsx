@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { matchesSearch } from "../lib/search";
+import { historyTimestamp } from "../lib/history";
 import { useLanguage } from "./LanguageProvider";
 import SearchField from "./SearchField";
 import { card } from "./styles";
@@ -12,6 +13,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   const { tr, locale } = useLanguage();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "title">("newest");
   const title = (row: HistoryRow) => row.type === "ЖИ талдауы" && /^Салыстыру #\d+$/.test(row.title) ? tr("Салыстыру #{id}", { id: row.title.split("#")[1] }) : tr(row.title);
   const metadata = (meta: string) => meta.split(" · ").map(part => {
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(part)) {
@@ -22,12 +24,19 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   }).join(" · ");
   const typeOptions = [...new Set(history.map(row => row.type))].sort((a, b) => tr(a).localeCompare(tr(b), locale));
   const filtered = history.filter(row => (typeFilter === "all" || row.type === typeFilter) && matchesSearch(query, [row.title, title(row), row.type, tr(row.type), row.meta, metadata(row.meta)], locale));
+  const sorted = filtered.map((row, index) => ({ row, index, timestamp: historyTimestamp(row.meta) })).sort((a, b) => {
+    if (sortOrder === "title") return title(a.row).localeCompare(title(b.row), locale) || a.index - b.index;
+    if (a.timestamp === null || b.timestamp === null) return a.timestamp === b.timestamp ? a.index - b.index : a.timestamp === null ? 1 : -1;
+    const byDate = sortOrder === "newest" ? b.timestamp - a.timestamp : a.timestamp - b.timestamp;
+    return byDate || a.index - b.index;
+  }).map(item => item.row);
   return <>
     <div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tr("Әрекеттер тарихы")}</h1><p className="mt-1 text-slate-500">{tr("Сақталған талдаулар мен құжаттар журналы")}</p></div>
     <SearchField value={query} onChange={setQuery} label={tr("Тарихтан іздеу")} placeholder={tr("Атауы, әрекет түрі немесе күні бойынша іздеу…")} count={filtered.length} total={history.length} />
+    <label className="block max-w-xs space-y-2 text-xs font-medium text-slate-500">{tr("Сұрыптау")}<select value={sortOrder} onChange={event => setSortOrder(event.target.value as typeof sortOrder)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800"><option value="newest">{tr("Жаңалары алдымен")}</option><option value="oldest">{tr("Ескілері алдымен")}</option><option value="title">{tr("Атауы бойынша")}</option></select></label>
     <label className="block max-w-xs space-y-2 text-xs font-medium text-slate-500">{tr("Әрекет түрі")}<select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800"><option value="all">{tr("Барлық әрекеттер")}</option>{typeOptions.map(type => <option key={type} value={type}>{tr(type)}</option>)}</select></label>
     <section className={`${card} divide-y divide-slate-100`} aria-label={tr("Әрекеттер тізімі")}>
-      {filtered.length ? <ul className="divide-y divide-slate-100">{filtered.map((row, i) => {
+      {sorted.length ? <ul className="divide-y divide-slate-100">{sorted.map((row, i) => {
         const comparisonId = row.type === "ЖИ талдауы" ? row.title.match(/^Салыстыру #(\d+)$/)?.[1] : undefined;
         const open = comparisonId ? () => void props.openAnalysis(comparisonId) : row.type === "Құжат" ? async () => {
           try {
