@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { currentUser, readStore, stamp, withStoreLock, withStoreReadLock, writeStore } from "../auth/_lib";
+import { consumeAuthRateLimit, currentUser, readStore, stamp, withStoreLock, withStoreReadLock, writeStore } from "../auth/_lib";
+import { analyzeComparison, type ComparisonChangeInput } from "../../lib/ai-comparison";
 import type { Template, User } from "../auth/_lib";
 import { handleApprovalRequest, handleDocumentRequest } from "../documents-handler";
 import { handleWorkspaceRequest } from "../workspaces-handler";
@@ -10,9 +11,9 @@ const words = (text: string) => new Set(text.toLocaleLowerCase().match(/[\p{L}\p
 const similarity = (a: string, b: string) => { const x = words(a), y = words(b); if (!x.size || !y.size) return 0; let shared = 0; x.forEach(word => { if (y.has(word)) shared++; }); return shared / (x.size + y.size - shared); };
 function compare(aText: string, bText: string) {
   const a = clauses(aText), b = clauses(bText), usedA = new Set<number>(), matchedB = new Set<number>();
-  const changes: { id: number; type: string; title: string; description: string; a: string; b: string }[] = [];
+  const changes: { id: number; type: string; title: string; description: string; a: string; b: string; beforeText: string; afterText: string }[] = [];
   const ref = (item?: Clause) => item ? (item.n ? `${item.n}-тармақ` : "жол") : "Жоқ";
-  const add = (type: string, title: string, description: string, old?: Clause, next?: Clause) => changes.push({ id: changes.length + 1, type, title, description, a: ref(old), b: ref(next) });
+  const add = (type: string, title: string, description: string, old?: Clause, next?: Clause) => changes.push({ id: changes.length + 1, type, title, description, a: ref(old), b: ref(next), beforeText: old?.text || "", afterText: next?.text || "" });
   b.forEach((item, j) => { const i = a.findIndex((old, k) => !usedA.has(k) && old.text.toLocaleLowerCase().replace(/\s+/g, " ").trim() === item.text.toLocaleLowerCase().replace(/\s+/g, " ").trim()); if (i >= 0) { usedA.add(i); matchedB.add(j); } });
   b.forEach((item, j) => { if (matchedB.has(j)) return; let best = -1, score = 0; a.forEach((old, i) => { const value = usedA.has(i) ? 0 : similarity(old.text, item.text); if (value > score) { score = value; best = i; } }); if (best >= 0 && score >= .45) { usedA.add(best); matchedB.add(j); add("CHANGED", "Өзгертілген тармақ", `«${a[best].text.slice(0, 70)}» → «${item.text.slice(0, 70)}» (ұқсастық ${Math.round(score * 100)}%)`, a[best], item); } else add("NEW_CLAUSE", "Жаңа тармақ", item.text.slice(0, 140), undefined, item); });
   a.forEach((item, i) => { if (!usedA.has(i)) add("LOST_FUNCTION", "Жоғалған функция (Lost Function)", item.text.slice(0, 140), item); });
@@ -40,7 +41,22 @@ async function handle(request: Request) {
       if (a.length > 200000 || b.length > 200000) return fail("Құжат тым үлкен (макс. 200 000 таңба)", 413);
       const countLines = (text: string) => text.split(/\r?\n/).filter(line => line.trim()).length;
       if (countLines(a) > 1000 || countLines(b) > 1000) return fail("Әр құжатта ең көбі 1 000 мәтіндік жол болуы керек", 413);
-      const id = store.nextId++, result = { id, ...compare(a, b), isSaved: !!user };
+      const comparison = compare(a, b);
+      let aiAnalysis: Awaited<ReturnType<typeof analyzeComparison>> | undefined;
+      let aiAnalysisError: string | undefined;
+      if (body.withAi === true) {
+        if (!user) aiAnalysisError = "ИИ талдауы үшін жүйеге кіріңіз.";
+        else {
+          const limit = await withStoreLock(() => consumeAuthRateLimit(request, user.email, 4, 60_000, "ai-comparison"));
+          if (limit.limited) aiAnalysisError = "ИИ талдау сұрауы жиі жіберілді. Бір минуттан кейін қайталап көріңіз.";
+          else {
+            const language = body.language === "ru" || body.language === "en" ? body.language : "kk";
+            try { aiAnalysis = await analyzeComparison(comparison.changes as ComparisonChangeInput[], language, request.signal); }
+            catch (error) { aiAnalysisError = error instanceof Error ? error.message : "ИИ талдау орындалмады."; }
+          }
+        }
+      }
+      const id = store.nextId++, result = { id, ...comparison, isSaved: !!user, ...(aiAnalysis ? { aiAnalysis } : {}), ...(aiAnalysisError ? { aiAnalysisError } : {}) };
       if (user) { store.analyses[String(id)] = { owner: user.email, result }; store.log.push({ owner: user.email, type: "ЖИ талдауы", tone: "blue", title: `Салыстыру #${id}`, meta: `${stamp()} · ${(result as ReturnType<typeof compare>).metrics.total} өзгеріс анықталды` }); await writeStore(store); }
       return json(result);
     }
