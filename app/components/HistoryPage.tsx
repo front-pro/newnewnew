@@ -5,8 +5,8 @@ import { matchesSearch } from "../lib/search";
 import { formatHistoryTimestamp, historyTimestamp } from "../lib/history";
 import { useLanguage } from "./LanguageProvider";
 import HistoryToolbar, { type HistorySortOrder } from "./HistoryToolbar";
-import { card } from "./styles";
-import type { HistoryRow, WorkspaceProps } from "./workspace-context";
+import HistoryActivity from "./HistoryActivity";
+import type { WorkspaceProps } from "./workspace-context";
 
 export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   const { history } = props;
@@ -34,8 +34,8 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   return <>
     <div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tr("Әрекеттер тарихы")}</h1><p className="mt-1 text-slate-500">{tr("Сақталған талдаулар мен құжаттар журналы")}</p></div>
     <HistoryToolbar query={query} onQueryChange={setQuery} typeFilter={typeFilter} onTypeFilterChange={setTypeFilter} typeOptions={typeOptions} sortOrder={sortOrder} onSortOrderChange={setSortOrder} count={filtered.length} total={history.length} />
-    <section className={`${card} divide-y divide-slate-100`} aria-label={tr("Әрекеттер тізімі")}>
-      {sorted.length ? <ul className="divide-y divide-slate-100">{sorted.map((row, i) => {
+    <section aria-label={tr("Әрекеттер тізімі")}>
+      {sorted.length ? <ul className="space-y-3">{sorted.map((row, i) => {
         const comparisonId = row.type === "ЖИ талдауы" ? row.title.match(/^Салыстыру #(\d+)$/)?.[1] : undefined;
         const timestamp = historyTimestamp(row.meta);
         const dateLabel = timestamp === null ? "" : formatHistoryTimestamp(timestamp, locale);
@@ -55,8 +55,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
             } else props.openDocument(document);
           } catch (error) { props.setNotice(error instanceof Error ? error.message : tr("Қате шықты")); }
         } : undefined;
-        const metaLabel = [tr(row.type), dateLabel, details].filter(Boolean).join(" · ");
-        return <li key={i} className="space-y-1 py-4 first:pt-0 last:pb-0">{open ? <button onClick={open} className="block w-full text-left" aria-label={`${tr("Ашу")}: ${title(row)}`}><span className="break-words text-sm font-semibold hover:text-blue-600">{title(row)}</span><span className="mt-1 block break-words text-xs text-slate-500">{metaLabel}</span></button> : <><p className="break-words text-sm font-semibold">{title(row)}</p><p className="break-words text-xs text-slate-500">{metaLabel}</p></>}</li>;
+        return <HistoryActivity key={`${row.type}:${row.documentId || ""}:${row.title}:${row.meta}:${i}`} row={row} title={title(row)} dateLabel={dateLabel} details={details} onOpen={open} />;
       })}</ul> : <div className="p-6 text-center text-sm text-slate-500">{tr(query.trim() ? "Тарихтан ештеңе табылмады. Іздеу сөзін өзгертіңіз." : "Тарих бос. Талдауды іске қосыңыз немесе құжат сақтаңыз.")}</div>}
     </section>
   </>;
