@@ -2,6 +2,11 @@
 export const messages: Record<string, readonly [string, string]> = {
   "Бүйір панельді ашу": ["Открыть боковую панель", "Open sidebar"],
   "Бүйір панельді ықшамдау": ["Свернуть боковую панель", "Collapse sidebar"],
+  "Тарихтан жою": ["Удалить из истории", "Remove from history"],
+  "Тарих жазбасы жойылды.": ["Запись удалена из истории.", "History entry deleted."],
+  "Тарих жазбасы себетке жіберілді.": ["Запись перемещена в корзину.", "History entry moved to trash."],
+  "Тарих жазбасы қалпына келтірілді.": ["Запись восстановлена из корзины.", "History entry restored."],
+  "Тарих жазбасы біржола жойылды.": ["Запись удалена навсегда.", "History entry permanently deleted."],
   "Компаниялар": [
     "Компании",
     "Companies"

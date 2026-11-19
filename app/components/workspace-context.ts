@@ -45,6 +45,7 @@ export type WorkspaceProps = {
   openTemplate: Template | null;
   notice: string; setNotice: Dispatch<SetStateAction<string>>;
   history: HistoryRow[];
+  setHistory: (history: HistoryRow[] | ((current: HistoryRow[]) => HistoryRow[])) => void;
   templateQuery: string;
   setTemplateQuery: Dispatch<SetStateAction<string>>;
   filteredTemplateCount: number;

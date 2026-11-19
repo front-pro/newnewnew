@@ -16,9 +16,11 @@ export type ApprovalStep = { approverId: string; email: string; decision: "pendi
 export type ApprovalFlow = { id: string; documentId: string; workspaceId?: string; requestedBy: string; requestedAt: string; version: number; status: "pending" | "approved" | "rejected" | "stale" | "superseded"; steps: ApprovalStep[] };
 export type AuditEventInput = { workspaceId?: string | null; actorId: string | null; action: string; resourceType: string; resourceId?: string | null; metadata?: Record<string, string | number | boolean | null> };
 type LegacyDocument = { id: string; title: string; text: string; updatedAt: string; version: number };
+export type HistoryLogEntry = { owner: string; type: string; tone: string; title: string; meta: string; documentId?: string };
+export type HistoryTrashEntry = HistoryLogEntry & { trashedAt: string };
 export type Store = {
   users: User[]; sessions: Record<string, SessionRecord>; verificationTokens: Record<string, { userId: string; expiresAt: string }>; passwordResetTokens: Record<string, { userId: string; expiresAt: string }>; approvals: ApprovalFlow[]; workspaces: Workspace[]; memberships: WorkspaceMembership[]; invitations: WorkspaceInvitation[]; groups: WorkspaceGroup[]; templates: Template[]; analyses: Record<string, { owner: string; result: Record<string, unknown> }>;
-  docs: Record<string, string>; versions: Record<string, number>; documents: SavedDocument[]; log: { owner: string; type: string; tone: string; title: string; meta: string; documentId?: string }[]; nextId: number;
+  docs: Record<string, string>; versions: Record<string, number>; documents: SavedDocument[]; log: HistoryLogEntry[]; historyTrash: HistoryTrashEntry[]; nextId: number;
 };
 const dataDirectory = process.env.KT_AGENT_DATA_DIR || path.join(process.cwd(), ".data");
 const pathToStore = path.join(dataDirectory, "agent.json");
@@ -97,7 +99,7 @@ function initialStore(): Store {
     users.push(makeUser("Әкімші", process.env.KT_BOOTSTRAP_ADMIN_EMAIL.trim().toLowerCase(), process.env.KT_BOOTSTRAP_ADMIN_PASSWORD, "admin"));
   }
   assignPlatformOperators(users);
-  return { users, sessions: {}, verificationTokens: {}, passwordResetTokens: {}, approvals: [], workspaces: [], memberships: [], invitations: [], groups: [], templates, analyses: {}, docs: {}, versions: {}, documents: [], log: [], nextId: 1 };
+  return { users, sessions: {}, verificationTokens: {}, passwordResetTokens: {}, approvals: [], workspaces: [], memberships: [], invitations: [], groups: [], templates, analyses: {}, docs: {}, versions: {}, documents: [], log: [], historyTrash: [], nextId: 1 };
 }
 export async function readStore(): Promise<Store> {
   const db = await getDatabase();
@@ -119,7 +121,7 @@ export async function readStore(): Promise<Store> {
     }
   }
   const users = Array.isArray(raw.users) ? raw.users.map(user => ({ ...user, emailVerifiedAt: user.emailVerifiedAt === undefined ? "legacy" : user.emailVerifiedAt })) : defaults.users;
-  return { ...defaults, ...raw, documents: documents.map(document => ({ ...document, shares: document.shares || [], groupShares: document.groupShares || [], comments: document.comments || [] })), users: assignPlatformOperators(users), verificationTokens: raw.verificationTokens || {}, passwordResetTokens: raw.passwordResetTokens || {}, approvals: Array.isArray(raw.approvals) ? raw.approvals : [], workspaces: Array.isArray(raw.workspaces) ? raw.workspaces : [], memberships: Array.isArray(raw.memberships) ? raw.memberships : [], invitations: Array.isArray(raw.invitations) ? raw.invitations : [], groups: Array.isArray(raw.groups) ? raw.groups : [], templates: Array.isArray(raw.templates) ? raw.templates : defaults.templates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: Array.isArray(raw.log) ? raw.log : [], sessions: raw.sessions || {}, nextId: Number.isSafeInteger(raw.nextId) && raw.nextId! > 0 ? raw.nextId! : 1 };
+  return { ...defaults, ...raw, documents: documents.map(document => ({ ...document, shares: document.shares || [], groupShares: document.groupShares || [], comments: document.comments || [] })), users: assignPlatformOperators(users), verificationTokens: raw.verificationTokens || {}, passwordResetTokens: raw.passwordResetTokens || {}, approvals: Array.isArray(raw.approvals) ? raw.approvals : [], workspaces: Array.isArray(raw.workspaces) ? raw.workspaces : [], memberships: Array.isArray(raw.memberships) ? raw.memberships : [], invitations: Array.isArray(raw.invitations) ? raw.invitations : [], groups: Array.isArray(raw.groups) ? raw.groups : [], templates: Array.isArray(raw.templates) ? raw.templates : defaults.templates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: Array.isArray(raw.log) ? raw.log : [], historyTrash: Array.isArray(raw.historyTrash) ? raw.historyTrash : [], sessions: raw.sessions || {}, nextId: Number.isSafeInteger(raw.nextId) && raw.nextId! > 0 ? raw.nextId! : 1 };
 }
 export async function writeStore(store: Store) {
   const db = await getDatabase();
