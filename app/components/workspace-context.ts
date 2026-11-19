@@ -4,8 +4,10 @@ import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from
 export type Tab = "dashboard" | "profile" | "compare" | "documents" | "templates" | "editor" | "history" | "approvals" | "company" | "users";
 export type CompanyWorkspace = { id: string; name: string; role: "admin" | "member" };
 export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean };
-export type Change = { type: string; title: string; description: string; a: string; b: string };
-export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[] };
+export type Change = { id: number; type: string; title: string; description: string; a: string; b: string };
+export type AiComparisonFinding = { changeId: number; whatChanged: string; impact: string; severity: "low" | "medium" | "high"; recommendation: string };
+export type AiComparison = { summary: string; overallRisk: "low" | "medium" | "high"; findings: AiComparisonFinding[] };
+export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[]; aiAnalysis?: AiComparison; aiAnalysisError?: string };
 export type SessionUser = { id: string; name: string; email: string; role: string; platformRole?: "operator" | null; company?: string; position?: string; avatar?: string | null };
 export type UserRow = { name: string; email: string; role: string };
 export type HistoryRow = { title: string; type: string; meta: string; documentId?: string };
@@ -54,7 +56,7 @@ export type WorkspaceProps = {
   templateDesc: string; setTemplateDesc: Dispatch<SetStateAction<string>>;
   templateBody: string; setTemplateBody: Dispatch<SetStateAction<string>>;
   templateAccess: string; setTemplateAccess: Dispatch<SetStateAction<string>>;
-  startAnalysis: () => Promise<void>;
+  startAnalysis: (withAi?: boolean) => Promise<void>;
   openAnalysis: (id: string) => Promise<void>;
   handleFile: (setter: (value: string) => void) => (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
   editTemplate: (template: Template) => Promise<void>;
