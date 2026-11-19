@@ -2525,5 +2525,5 @@ export const messages: Record<string, readonly [string, string]> = {
   "ИИ талдау нәтижесінің пішімі қате.": ["Формат результата ИИ-анализа неверен.", "The AI analysis result has an invalid format."],
   "ИИ барлық өзгеріске толық түсініктеме бере алмады. Талдауды қайталап көріңіз.": ["ИИ не смог объяснить все изменения. Повторите анализ.", "The AI could not explain every change. Run the analysis again."],
   "ИИ талдау сұрауы жиі жіберілді. Бір минуттан кейін қайталап көріңіз.": ["Слишком много запросов ИИ-анализа. Повторите через минуту.", "Too many AI analysis requests. Try again in a minute."],
-  "ИИ агент бір талдауда 100-ге дейінгі айырмашылықты түсіндіреді. Қалған айырмашылықтар салыстыру тізімінде толық көрсетіледі.": ["ИИ-агент объясняет до 100 различий за один анализ. Остальные полностью показаны в списке сравнений.", "The AI agent explains up to 100 changes per run. Remaining changes are still listed in the comparison."],
+  "ИИ талдауы бір ретте 1 000 өзгеріске дейін қолдайды. Негізгі салыстыру барлық айырмашылықты көрсетеді.": ["ИИ-анализ поддерживает до 1 000 изменений за один запуск. Основное сравнение показывает все различия.", "AI analysis supports up to 1,000 changes per run. The main comparison still shows every difference."],
 };
