@@ -4,6 +4,7 @@ import { useState } from "react";
 import { matchesSearch } from "../lib/search";
 import { formatHistoryTimestamp, historyTimestamp } from "../lib/history";
 import { useLanguage } from "./LanguageProvider";
+import Icon from "./Icon";
 import HistoryToolbar, { type HistorySortOrder } from "./HistoryToolbar";
 import HistoryActivity from "./HistoryActivity";
 import type { HistoryRow, WorkspaceProps } from "./workspace-context";
@@ -32,8 +33,16 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
     const byDate = sortOrder === "newest" ? b.timestamp - a.timestamp : a.timestamp - b.timestamp;
     return byDate || a.index - b.index;
   }).map(item => item.row);
+  const analysisCount = history.filter(row => row.type === "ЖИ талдауы").length;
+  const documentCount = history.filter(row => row.type === "Құжат").length;
+  const hasActiveFilters = Boolean(query.trim()) || typeFilter !== "all";
   return <>
     <div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tr("Әрекеттер тарихы")}</h1><p className="mt-1 text-slate-500">{tr("Сақталған талдаулар мен құжаттар журналы")}</p></div>
+    <div className="grid gap-3 sm:grid-cols-3" aria-label={tr("Тарих қорытындысы")}>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{tr("Барлық әрекет")}</p><p className="mt-1 text-2xl font-bold text-slate-900">{history.length}</p></div>
+      <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4"><p className="text-xs font-medium text-blue-700">{tr("Талдаулар")}</p><p className="mt-1 text-2xl font-bold text-blue-800">{analysisCount}</p></div>
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"><p className="text-xs font-medium text-emerald-700">{tr("Құжат әрекеттері")}</p><p className="mt-1 text-2xl font-bold text-emerald-800">{documentCount}</p></div>
+    </div>
     <HistoryToolbar query={query} onQueryChange={setQuery} typeFilter={typeFilter} onTypeFilterChange={setTypeFilter} typeOptions={typeOptions} sortOrder={sortOrder} onSortOrderChange={setSortOrder} count={filtered.length} total={history.length} />
     <section aria-label={tr("Әрекеттер тізімі")}>
       {sorted.length ? <ul className="space-y-3">{sorted.map((row, i) => {
@@ -61,7 +70,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
           finally { setOpeningKey(null); }
         } : undefined;
         return <HistoryActivity key={rowKey} row={row} title={title(row)} dateLabel={dateLabel} details={details} onOpen={open} opening={openingKey === rowKey} disabled={openingKey !== null} />;
-      })}</ul> : <div className="p-6 text-center text-sm text-slate-500">{tr(query.trim() ? "Тарихтан ештеңе табылмады. Іздеу сөзін өзгертіңіз." : "Тарих бос. Талдауды іске қосыңыз немесе құжат сақтаңыз.")}</div>}
+      })}</ul> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"><Icon name="history" className="size-6" /></span><h2 className="mt-4 text-base font-semibold text-slate-800">{tr(hasActiveFilters ? "Сүзгіге сай әрекет жоқ" : "Тарих бос")}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{tr(hasActiveFilters ? "Іздеу сөзін өзгертіңіз немесе сүзгілерді тазалаңыз." : "Талдауды іске қосыңыз немесе құжатты сақтаңыз — әрекеттер осында көрінеді.")}</p>{hasActiveFilters ? <button type="button" onClick={() => { setQuery(""); setTypeFilter("all"); }} className="mt-4 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">{tr("Сүзгілерді тазалау ×")}</button> : <button type="button" onClick={() => props.setTab("editor")} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{tr("Құжат редакторын ашу")}</button>}</div>}
     </section>
   </>;
 }
