@@ -21,8 +21,8 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
     const timestamp = historyTimestamp(meta);
     const details = timestamp === null ? meta : meta.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: · )?/, "");
     return details.split(" · ").filter(Boolean).map(part => {
-    const changes = part.match(/^(\d+) өзгеріс анықталды$/);
-    return changes ? tr("{count} өзгеріс анықталды", { count: changes[1] }) : tr(part);
+      const changes = part.match(/^(\d+) өзгеріс анықталды$/);
+      return changes ? tr("{count} өзгеріс анықталды", { count: changes[1] }) : tr(part);
     }).join(" · ");
   };
   const typeOptions = [...new Set(history.map(row => row.type))].sort((a, b) => tr(a).localeCompare(tr(b), locale));
@@ -38,7 +38,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   const hasActiveFilters = Boolean(query.trim()) || typeFilter !== "all";
   return <>
     <div className="border-b border-slate-200 pb-5"><h1 className="text-3xl font-bold">{tr("Әрекеттер тарихы")}</h1><p className="mt-1 text-slate-500">{tr("Сақталған талдаулар мен құжаттар журналы")}</p></div>
-    <div className="grid gap-3 sm:grid-cols-3" aria-label={tr("Тарих қорытындысы")}>
+    <div role="group" className="grid gap-3 sm:grid-cols-3" aria-label={tr("Тарих қорытындысы")}>
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{tr("Барлық әрекет")}</p><p className="mt-1 text-2xl font-bold text-slate-900">{history.length}</p></div>
       <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4"><p className="text-xs font-medium text-blue-700">{tr("Талдаулар")}</p><p className="mt-1 text-2xl font-bold text-blue-800">{analysisCount}</p></div>
       <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"><p className="text-xs font-medium text-emerald-700">{tr("Құжат әрекеттері")}</p><p className="mt-1 text-2xl font-bold text-emerald-800">{documentCount}</p></div>
