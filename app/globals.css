@@ -23,6 +23,9 @@ body {
   background-color: #f3f7fd;
   color: #0f172a;
 }
+@media (min-width: 1280px) {
+  .workspace-shell:has(.sidebar[data-collapsed="true"]) .app-content { margin-left: 5rem !important; }
+}
 
 html.dark {
   color-scheme: dark;

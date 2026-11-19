@@ -1964,6 +1964,14 @@ export const messages: Record<string, readonly [string, string]> = {
     "Открыть меню",
     "Open menu"
   ],
+  "Мәзірді ықшамдау": [
+    "Свернуть меню",
+    "Collapse menu"
+  ],
+  "Мәзірді кеңейту": [
+    "Развернуть меню",
+    "Expand menu"
+  ],
   "Профиль": [
     "Профиль",
     "Profile"
