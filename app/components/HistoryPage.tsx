@@ -6,7 +6,7 @@ import { formatHistoryTimestamp, historyTimestamp } from "../lib/history";
 import { useLanguage } from "./LanguageProvider";
 import HistoryToolbar, { type HistorySortOrder } from "./HistoryToolbar";
 import HistoryActivity from "./HistoryActivity";
-import type { WorkspaceProps } from "./workspace-context";
+import type { HistoryRow, WorkspaceProps } from "./workspace-context";
 
 export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   const { history } = props;
@@ -14,6 +14,7 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<HistorySortOrder>("newest");
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
   const title = (row: HistoryRow) => row.type === "ЖИ талдауы" && /^Салыстыру #\d+$/.test(row.title) ? tr("Салыстыру #{id}", { id: row.title.split("#")[1] }) : tr(row.title);
   const metadata = (meta: string) => {
     const timestamp = historyTimestamp(meta);
@@ -37,11 +38,14 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
     <section aria-label={tr("Әрекеттер тізімі")}>
       {sorted.length ? <ul className="space-y-3">{sorted.map((row, i) => {
         const comparisonId = row.type === "ЖИ талдауы" ? row.title.match(/^Салыстыру #(\d+)$/)?.[1] : undefined;
+        const rowKey = `${row.type}:${row.documentId || ""}:${row.title}:${row.meta}:${i}`;
         const timestamp = historyTimestamp(row.meta);
         const dateLabel = timestamp === null ? "" : formatHistoryTimestamp(timestamp, locale);
         const details = metadata(row.meta);
-        const open = comparisonId ? () => void props.openAnalysis(comparisonId) : row.type === "Құжат" ? async () => {
+        const open = comparisonId || row.type === "Құжат" ? async () => {
+          setOpeningKey(rowKey);
           try {
+            if (comparisonId) { await props.openAnalysis(comparisonId); return; }
             const response = await fetch(`/api/documents${row.documentId ? `/${encodeURIComponent(row.documentId)}` : ""}`);
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || "Құжат ашылмады");
@@ -53,9 +57,10 @@ export default function HistoryPage({ props }: { props: WorkspaceProps }) {
               if (!detailResponse.ok) throw new Error(detail.error || "Құжат ашылмады");
               props.openDocument(detail);
             } else props.openDocument(document);
-          } catch (error) { props.setNotice(error instanceof Error ? error.message : tr("Қате шықты")); }
+          } catch (error) { props.setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+          finally { setOpeningKey(null); }
         } : undefined;
-        return <HistoryActivity key={`${row.type}:${row.documentId || ""}:${row.title}:${row.meta}:${i}`} row={row} title={title(row)} dateLabel={dateLabel} details={details} onOpen={open} />;
+        return <HistoryActivity key={rowKey} row={row} title={title(row)} dateLabel={dateLabel} details={details} onOpen={open} opening={openingKey === rowKey} disabled={openingKey !== null} />;
       })}</ul> : <div className="p-6 text-center text-sm text-slate-500">{tr(query.trim() ? "Тарихтан ештеңе табылмады. Іздеу сөзін өзгертіңіз." : "Тарих бос. Талдауды іске қосыңыз немесе құжат сақтаңыз.")}</div>}
     </section>
   </>;
