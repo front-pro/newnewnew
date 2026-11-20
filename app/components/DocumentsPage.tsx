@@ -6,6 +6,7 @@ import { useLanguage } from "./LanguageProvider";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { getDocumentDeadlineStatus, type DocumentDetail, type DocumentSummary } from "../lib/documents";
 import { editorHtmlToText } from "../lib/editor-content";
+import type { ObligationSuggestion } from "../lib/obligations";
 import { readDocumentFile } from "../lib/read-document";
 import { button, card } from "./styles";
 import type { WorkspaceProps } from "./workspace-context";
@@ -42,6 +43,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
     const [selected, setSelected] = useState<SharedDocument | null>(null);
     const [snapshotNumber, setSnapshotNumber] = useState<number | null>(null);
     const [comments, setComments] = useState<Comment[]>([]), [commentText, setCommentText] = useState("");
+    const [obligationSuggestions, setObligationSuggestions] = useState<ObligationSuggestion[]>([]), [addingObligation, setAddingObligation] = useState("");
     const [shareEmail, setShareEmail] = useState(""), [sharePermission, setSharePermission] = useState<"viewer" | "commenter" | "editor">("viewer");
     const [shareGroupId, setShareGroupId] = useState(""), [shareGroupPermission, setShareGroupPermission] = useState<"viewer" | "commenter" | "editor">("viewer"), [companyGroups, setCompanyGroups] = useState<{ id: string; name: string }[]>([]), [groupsWorkspaceId, setGroupsWorkspaceId] = useState("");
     const [approverEmails, setApproverEmails] = useState("");
@@ -53,6 +55,10 @@ export default function DocumentsPage({ props, workspaceScope }: {
         fetch(`/api/documents/${encodeURIComponent(selectedId)}/comments`, { cache: "no-store" }).then(async response => {
             const data = await response.json();
             if (response.ok && !cancelled) setComments(data);
+        }).catch(() => {});
+        fetch(`/api/documents/${encodeURIComponent(selectedId)}/obligations`, { cache: "no-store" }).then(async response => {
+            const data = await response.json();
+            if (response.ok && !cancelled) { setObligationSuggestions(data.suggestions || []); setSelected(current => current?.id === selectedId ? { ...current, obligations: data.items || [] } : current); }
         }).catch(() => {});
         if (selectedPermission === "owner") fetch(`/api/documents/${encodeURIComponent(selectedId)}/shares`, { cache: "no-store" }).then(async response => {
             const data = await response.json();
@@ -70,6 +76,18 @@ export default function DocumentsPage({ props, workspaceScope }: {
         }
         return () => { cancelled = true; };
     }, [selectedId, selectedPermission, selected?.workspaceId]);
+    async function addObligation(suggestion: ObligationSuggestion) {
+      if (!selected) return;
+      setAddingObligation(suggestion.dueDate + suggestion.type);
+      try {
+        const response = await fetch(`/api/documents/${encodeURIComponent(selected.id)}/obligations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(suggestion) });
+        const data = await response.json(); if (!response.ok) throw new Error(data.error || tr("Тапсырманы сақтау мүмкін болмады."));
+        setSelected(current => current?.id === selected.id ? { ...current, obligations: data.items } : current);
+        setObligationSuggestions(current => current.filter(item => !(item.dueDate === suggestion.dueDate && item.type === suggestion.type)));
+        setNotice(tr("Міндеттеме күнтізбеге қосылды."));
+      } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); }
+      finally { setAddingObligation(""); }
+    }
     useEffect(() => {
         if (!sessionUser)
             return;
@@ -349,6 +367,7 @@ export default function DocumentsPage({ props, workspaceScope }: {
       {selected && <aside className={`version-panel ${card} min-w-0 space-y-5`} aria-label={tr("Құжат нұсқалары")}>
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-1 text-xs font-semibold uppercase tracking-wider text-blue-600">{tr("Нұсқалар тарихы")}</p><h2 className="break-words font-bold">{selected.title}</h2><p className="mt-1 text-xs text-slate-400">{tr("{count} сақталған нұсқа", { count: selected.versionCount })}</p></div><button onClick={() => setSelected(null)} aria-label={tr("Нұсқалар панелін жабу")} className="rounded-lg px-2 py-1 text-xl text-slate-400 hover:bg-slate-100">×</button></div>
         {(["owner", "editor"].includes(selected.permission || "")) && <form key={`deadline-${selected.id}`} onSubmit={saveDeadline} className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/60 p-3"><label className="block space-y-1 text-xs font-semibold">{tr("Құжаттың аяқталу мерзімі")}<input name="dueDate" type="date" defaultValue={selected.dueDate || ""} className={field}/></label><p className="text-[11px] leading-5 text-slate-500">{tr("Мерзімді құжаттан табуды жеңілдету үшін белгілеңіз.")}</p><button className={`${button} w-full border border-amber-200 bg-white text-xs`}>{tr("Мерзімді сақтау")}</button></form>}
+        <section className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-3"><div><h3 className="font-semibold">{tr("Төлемдер мен міндеттемелер")}</h3><p className="mt-1 text-xs text-slate-500">{tr("Құжаттағы нақты күндерді тауып, еске салғыш жасаңыз.")}</p></div>{(selected.obligations || []).map(item=><article key={item.id} className="rounded-lg border border-slate-200 bg-white p-3"><p className="text-sm font-medium">{item.title}</p><p className="mt-1 text-xs text-slate-500">{new Intl.DateTimeFormat(locale,{dateStyle:"medium"}).format(new Date(`${item.dueDate}T12:00:00`))} · {tr(item.type === "payment" ? "Төлем" : item.type === "renewal" ? "Ұзарту" : item.type === "expiry" ? "Аяқталу мерзімі" : "Міндеттеме")}</p><p className="mt-1 text-xs text-slate-500">{tr("Жауапты тарап")}: {item.responsible || tr("Әзірге белгісіз")}</p></article>)}{obligationSuggestions.map((item,index)=><article key={`${item.type}-${item.dueDate}`} className="rounded-lg border border-blue-100 bg-white p-3"><p className="text-sm font-medium">{tr(item.type === "payment" ? "Төлем" : item.type === "renewal" ? "Ұзарту" : item.type === "expiry" ? "Аяқталу мерзімі" : "Міндеттеме")}: {item.title}</p><p className="mt-1 text-xs text-slate-500">{new Intl.DateTimeFormat(locale,{dateStyle:"medium"}).format(new Date(`${item.dueDate}T12:00:00`))}</p>{["owner","editor"].includes(selected.permission || "") && <><label className="mt-2 block text-xs text-slate-500">{tr("Жауапты тарап")}<input value={item.responsible} onChange={event=>setObligationSuggestions(current=>current.map((entry,i)=>i===index?{...entry,responsible:event.target.value}:entry))} maxLength={100} className={`${field} mt-1`}/></label><button disabled={!!addingObligation} onClick={()=>void addObligation(item)} className={`${button} mt-2 w-full bg-blue-600 text-xs text-white disabled:opacity-50`}>{addingObligation === item.dueDate + item.type ? tr("Сақталуда…") : tr("Еске салғыш қосу")}</button></>}</article>)}{!obligationSuggestions.length && !(selected.obligations || []).length && <p className="text-xs text-slate-500">{tr("Күн жазылған міндеттеме табылмады.")}</p>}</section>
         <form key={selected.id} onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);void organize(selected,{folder:String(data.get("folder")||""),tags:String(data.get("tags")||"").split(",").map(t=>t.trim()).filter(Boolean)});}} className="space-y-2 rounded-xl bg-slate-50 p-3"><label className="block space-y-1 text-xs">{tr("Қалта")}<input name="folder" maxLength={80} defaultValue={selected.folder||""} className={field}/></label><label className="block space-y-1 text-xs">{tr("Тегтер (үтірмен бөліңіз)")}<input name="tags" defaultValue={(selected.tags||[]).join(", ")} className={field}/></label><button className={`${button} w-full border border-slate-200 bg-white text-xs`}>{tr("Реттеуді сақтау")}</button></form>
         <div className="max-h-60 space-y-2 overflow-y-auto">{[...selected.versions].reverse().map(version => <button key={version.version} onClick={() => setSnapshotNumber(version.version)} aria-pressed={snapshotNumber === version.version} className={`flex w-full items-center justify-between gap-2 rounded-xl border p-3 text-left ${snapshotNumber === version.version ? "border-blue-200 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}><span><span className="font-mono text-sm font-bold text-slate-700">v{version.version}</span><time className="mt-1 block text-xs text-slate-500" dateTime={version.savedAt || undefined}>{date(version.savedAt)}</time></span>{version.version === selected.version && <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">{tr("Соңғы нұсқа")}</span>}</button>)}</div>
         <section className="space-y-3 border-t border-slate-100 pt-4"><h3 className="font-semibold">{tr("Пікірлер")}</h3><div className="max-h-48 space-y-2 overflow-auto">{comments.map(comment => <article key={comment.id} className="rounded-lg bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-600">{comment.author}</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{comment.text}</p>{comment.clause && <button className="mt-2 text-xs text-blue-600" onClick={()=>{setSnapshotNumber(comment.version!);const v=selected.versions.find(v=>v.version===comment.version);const i=v&&editorHtmlToText(v.text).split("\n").findIndex(line=>line.trim().match(/^(\d+(?:\.\d+)*)\.?\s/)?.[1]===comment.clause);requestAnimationFrame(()=>document.getElementById(`preview-line-${i}`)?.scrollIntoView({block:"center"}));}}>v{comment.version} · §{comment.clause}</button>}<time className="mt-1 block text-[11px] text-slate-400">{date(comment.createdAt)}</time></article>)}{!comments.length && <p className="text-xs text-slate-400">{tr("Пікір әлі жоқ")}</p>}</div>{["owner", "editor", "commenter"].includes(selected.permission || "") && <div className="space-y-2"><input aria-label={tr("Тармақ нөмірі")} value={clause} onChange={e=>setClause(e.target.value)} placeholder={tr("Тармақ нөмірі (мысалы, 3.1)")} maxLength={40} className={field}/><textarea value={commentText} onChange={event => setCommentText(event.target.value)} maxLength={5000} placeholder={tr("Пікір қалдыру...")} className={`${field} min-h-20`}/><button onClick={() => void addComment()} disabled={!commentText.trim()} className={`${button} bg-blue-600 text-white disabled:opacity-50`}>{tr("Пікірді жіберу")}</button></div>}</section>

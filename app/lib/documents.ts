@@ -1,4 +1,5 @@
 import { editorHtmlToText } from "./editor-content";
+import type { ContractObligation } from "./obligations";
 
 export type DocumentVersion = {
   version: number;
@@ -12,6 +13,7 @@ export type SavedDocument = {
   owner: string;
   workspaceId?: string;
   dueDate?: string;
+  obligations?: ContractObligation[];
   approvalId?: string;
   deletedAt?: string;
   shares?: { email: string; permission: "viewer" | "commenter" | "editor" }[];
@@ -25,7 +27,7 @@ export type SavedDocument = {
   versions: DocumentVersion[];
 };
 
-export type DocumentSummary = Pick<SavedDocument, "id" | "title" | "source" | "createdAt" | "updatedAt" | "workspaceId" | "dueDate"> & {
+export type DocumentSummary = Pick<SavedDocument, "id" | "title" | "source" | "createdAt" | "updatedAt" | "workspaceId" | "dueDate" | "obligations"> & {
   folder: string;
   tags: string[];
   favorite: boolean;
@@ -50,6 +52,7 @@ export function summarizeDocument(document: SavedDocument, userId?: string): Doc
     source: document.source,
     workspaceId: document.workspaceId,
     dueDate: document.dueDate,
+    obligations: document.obligations || [],
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     version: latest.version,

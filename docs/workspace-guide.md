@@ -57,6 +57,13 @@ current browser and are not shared with other users. PDF and image imports can
 be opened beside extracted text for manual OCR review. The original file remains
 in the browser and is not stored with the document.
 
+Document details scan the current text for explicit dates near payment, renewal,
+expiry, or deadline language. The editor or owner reviews each suggestion, may
+enter the responsible party, and adds it to the document's shared obligation
+list. Saved obligations appear on the home page. Exporting one as an `.ics`
+calendar event includes a one-day-before reminder. Relative periods such as
+"within 30 days" are not converted into dates automatically.
+
 MFA and SSO are not implemented. They require selecting an identity provider and
 configuring its secrets and callback URLs before an authentication flow can be
 added safely. Server-side autosave, durable shared review decisions and original

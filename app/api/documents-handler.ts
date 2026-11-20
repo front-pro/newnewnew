@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { summarizeDocument } from "../lib/documents";
 import { canAccessModule } from "../lib/access-control";
 import { editorHtmlToText, sanitizeEditorHtml } from "../lib/editor-content";
+import { extractObligationSuggestions, type ObligationType } from "../lib/obligations";
 import type { SavedDocument } from "../lib/documents";
 import { appendAuditEvent, currentUser, readStore, stamp, writeStore } from "./auth/_lib";
 import type { ApprovalFlow, Store, User } from "./auth/_lib";
@@ -87,6 +88,24 @@ export async function handleDocuments(request: Request, path: string[], store: S
     await writeStore(store);
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.deadline_update", resourceType: "document", resourceId: document.id, metadata: { dueDate: document.dueDate || null } });
     return json({ ...summarizeDocument(document, user.id), permission: permission(document) });
+  }
+  if (path.length === 2 && path[1] === "obligations" && (method === "GET" || method === "POST")) {
+    const document = owned.find(item => item.id === path[0]);
+    if (!document) return fail("Құжат табылмады", 404);
+    if (method === "GET") return json({ items: document.obligations || [], suggestions: extractObligationSuggestions(document.versions.at(-1)?.text || "") });
+    if (!canEdit(document)) return fail("Міндеттеме қосуға рұқсат жоқ", 403);
+    let body;
+    try { body = await request.json(); } catch { return fail("Сұрау пішімі қате"); }
+    const title = typeof body?.title === "string" ? body.title.trim().slice(0, 160) : "";
+    const dueDate = typeof body?.dueDate === "string" ? body.dueDate : "";
+    const type: ObligationType = ["payment", "renewal", "expiry", "deadline"].includes(body?.type) ? body.type : "deadline";
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? new Date(`${dueDate}T00:00:00.000Z`) : null;
+    if (!title || !parsed || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dueDate) return fail("Тапсырма атауы мен күнін дұрыс енгізіңіз");
+    const obligation = { id: randomUUID(), type, title, dueDate, responsible: typeof body?.responsible === "string" ? body.responsible.trim().slice(0, 100) : "", excerpt: typeof body?.excerpt === "string" ? body.excerpt.trim().slice(0, 400) : "", createdAt: new Date().toISOString() };
+    document.obligations = [...(document.obligations || []).filter(item => !(item.dueDate === dueDate && item.type === type && item.title === title)), obligation].slice(-100);
+    await writeStore(store);
+    await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.obligation_add", resourceType: "document", resourceId: document.id, metadata: { obligationId: obligation.id, type, dueDate } });
+    return json({ items: document.obligations, obligation }, 201);
   }
   if (path.length === 2 && path[1] === "approval" && method === "POST") {
     const document = owned.find(item => item.id === path[0] && canEdit(item));
