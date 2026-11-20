@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import os from "node:os";
 import { consumeAuthRateLimit, currentUser, readStore, stamp, withStoreLock, withStoreReadLock, writeStore } from "../auth/_lib";
 import { analyzeComparison, type ComparisonChangeInput } from "../../lib/ai-comparison";
 import type { Template, User } from "../auth/_lib";
@@ -31,6 +32,19 @@ const apiError = (e: unknown) => e instanceof SyntaxError ? fail("JSON сұра�
 async function handle(request: Request) {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent), method = request.method;
+    if (path[0] === "admin" && path[1] === "overview" && path.length === 2 && method === "GET") {
+      const store = await readStore(), user = await currentUser(request, store);
+      if (user?.role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
+      const now = Date.now(), liveSessions = Object.values(store.sessions).filter(session => typeof session !== "string" && Date.parse(session.expiresAt) > now).length;
+      const memory = process.memoryUsage(), totalMemory = os.totalmem(), freeMemory = os.freemem();
+      return json({
+        capturedAt: new Date(now).toISOString(), uptimeSeconds: Math.floor(process.uptime()),
+        memory: { rssBytes: memory.rss, heapUsedBytes: memory.heapUsed, heapTotalBytes: memory.heapTotal, systemUsedBytes: totalMemory - freeMemory, systemTotalBytes: totalMemory },
+        cpu: { cores: os.cpus().length, loadAverage: os.loadavg() },
+        counts: { users: store.users.length, documents: store.documents.length, templates: store.templates.length, analyses: Object.keys(store.analyses).length, liveSessions },
+        activity: store.log.slice(-30).reverse().map(entry => ({ actor: store.users.find(candidate => candidate.email === entry.owner)?.name || entry.owner, action: entry.meta.split(" · ").slice(1).join(" · ") || entry.type, item: entry.title, at: entry.meta.split(" · ")[0] || "" })),
+      });
+    }
     if (path[0] === "documents") return await handleDocumentRequest(request, path.slice(1));
     if (path[0] === "approvals") {
       const user = await currentUser(request);
