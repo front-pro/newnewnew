@@ -37,12 +37,25 @@ async function handle(request: Request) {
       if (user?.role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
       const now = Date.now(), liveSessions = Object.values(store.sessions).filter(session => typeof session !== "string" && Date.parse(session.expiresAt) > now).length;
       const memory = process.memoryUsage(), totalMemory = os.totalmem(), freeMemory = os.freemem();
+      const requestedDays = Number(new URL(request.url).searchParams.get("days"));
+      const days = [7, 14, 30].includes(requestedDays) ? requestedDays : 14;
+      const start = new Date(now); start.setUTCHours(0, 0, 0, 0); start.setUTCDate(start.getUTCDate() - days + 1);
+      const daily = Array.from({ length: days }, (_, index) => { const date = new Date(start); date.setUTCDate(start.getUTCDate() + index); return { day: date.toISOString().slice(0, 10), documents: 0, analyses: 0, templates: 0, companies: 0, other: 0, total: 0 }; });
+      const activity = store.log.slice(-5000).flatMap(entry => {
+        const at = entry.meta.split(" · ")[0] || "", day = at.slice(0, 10), point = daily.find(item => item.day === day);
+        if (!point) return [];
+        const kind = entry.type === "Құжат" ? "documents" : entry.type.includes("талдау") || entry.type === "ЖИ талдауы" ? "analyses" : entry.type === "Үлгі" ? "templates" : entry.type === "Компания" ? "companies" : "other";
+        point[kind]++; point.total++;
+        return [{ actor: store.users.find(candidate => candidate.email === entry.owner)?.name || entry.owner, actorEmail: entry.owner, kind, action: entry.meta.split(" · ").slice(1).join(" · ") || entry.type, title: entry.title, at }];
+      }).reverse();
+      const roles = ["admin", "employee", "user"].map(role => ({ role, count: store.users.filter(person => person.role === role).length }));
       return json({
         capturedAt: new Date(now).toISOString(), uptimeSeconds: Math.floor(process.uptime()),
         memory: { rssBytes: memory.rss, heapUsedBytes: memory.heapUsed, heapTotalBytes: memory.heapTotal, systemUsedBytes: totalMemory - freeMemory, systemTotalBytes: totalMemory },
         cpu: { cores: os.cpus().length, loadAverage: os.loadavg() },
-        counts: { users: store.users.length, documents: store.documents.length, templates: store.templates.length, analyses: Object.keys(store.analyses).length, liveSessions },
-        activity: store.log.slice(-30).reverse().map(entry => ({ actor: store.users.find(candidate => candidate.email === entry.owner)?.name || entry.owner, action: entry.meta.split(" · ").slice(1).join(" · ") || entry.type, item: entry.title, at: entry.meta.split(" · ")[0] || "" })),
+        days, daily, roles, verification: { verified: store.users.filter(person => !!person.emailVerifiedAt).length, unverified: store.users.filter(person => !person.emailVerifiedAt).length },
+        counts: { users: store.users.length, verifiedUsers: store.users.filter(person => !!person.emailVerifiedAt).length, documents: store.documents.length, templates: store.templates.length, analyses: Object.keys(store.analyses).length, liveSessions },
+        activity: activity.slice(0, 500),
       });
     }
     if (path[0] === "documents") return await handleDocumentRequest(request, path.slice(1));
@@ -107,7 +120,7 @@ async function handle(request: Request) {
     if (path[0] === "templates" && method === "GET" && path.length === 1) {
       if (!user) return fail("Жүйеге кіріңіз", 401);
       if (!canAccessModule(user, "templates")) return fail("Үлгілер бөліміне қол жеткізуге рұқсат жоқ", 403);
-      return json(store.templates.map(t => accessible(user, t) ? t : { id: t.id, title: t.title, desc: t.desc, access: t.access, owner: t.owner, locked: true }));
+      return json(store.templates.map(t => accessible(user, t) ? t : { id: t.id, title: t.title, desc: t.desc, access: t.access, owner: t.owner, category: t.category, design: t.design, locked: true }));
     }
     if (path[0] === "templates" && path[1] && path.length === 2 && method === "GET") {
       if (!user) return fail("Жүйеге кіріңіз", 401);
@@ -131,7 +144,8 @@ async function handle(request: Request) {
       const designBody = body.design && typeof body.design === "object" ? body.design as Record<string, unknown> : {};
       const theme = ["classic", "modern", "minimal"].includes(String(designBody.theme)) ? designBody.theme as "classic" | "modern" | "minimal" : "classic";
       const accent = /^#[0-9a-fA-F]{6}$/.test(String(designBody.accent || "")) ? String(designBody.accent) : "#2563eb";
-      const template: Template = { id: Math.max(0, ...store.templates.map(t => t.id)) + 1, title, desc, body: text, access, owner: user.email, design: { theme, accent } };
+      const category = body.category === "table" || (!body.category && /<table\b/i.test(text)) ? "table" : "document";
+      const template: Template = { id: Math.max(0, ...store.templates.map(t => t.id)) + 1, title, desc, body: text, access, owner: user.email, category, design: { theme, accent } };
       store.templates.push(template); store.log.push({ owner: user.email, type: "Үлгі", tone: "violet", title, meta: `${stamp()} · жаңа үлгі қосылды` }); await writeStore(store); return json(template, 201);
     }
     if (path[0] === "templates" && path[1] && method === "PATCH" && path.length === 2) {
@@ -144,7 +158,7 @@ async function handle(request: Request) {
       if (title.length < 3 || title.length > 160) return fail("Атауы 3–160 таңба болуы керек"); if (desc.length > 1000) return fail("Сипаттама тым ұзын"); if (!text.trim()) return fail("Үлгі мәтіні бос"); if (text.length > 200000) return fail("Үлгі мәтіні тым үлкен", 413);
       const theme = ["classic", "modern", "minimal"].includes(String(designBody.theme)) ? designBody.theme as "classic" | "modern" | "minimal" : "classic";
       const accent = /^#[0-9a-fA-F]{6}$/.test(String(designBody.accent || "")) ? String(designBody.accent) : "#2563eb";
-      template.title = title; template.desc = desc; template.body = text; template.access = body.access === "employee" ? "employee" : "public"; template.design = { theme, accent };
+      template.title = title; template.desc = desc; template.body = text; template.access = body.access === "employee" ? "employee" : "public"; template.category = body.category === "table" || (!body.category && /<table\b/i.test(text)) ? "table" : "document"; template.design = { theme, accent };
       store.log.push({ owner: user.email, type: "Үлгі", tone: "violet", title, meta: `${stamp()} · үлгі жаңартылды` }); await writeStore(store); return json(template);
     }
     if (path[0] === "templates" && path[1] && method === "DELETE") {
