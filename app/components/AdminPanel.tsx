@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Icon from "./Icon";
 import { useLanguage } from "./LanguageProvider";
 import { roleKey } from "../lib/i18n";
 import { accessModules, type AccessModule } from "../lib/access-control";
 import { button, card } from "./styles";
 import type { WorkspaceProps } from "./workspace-context";
+
+type AdminOverview = { capturedAt: string; uptimeSeconds: number; memory: { rssBytes: number; heapUsedBytes: number; heapTotalBytes: number; systemUsedBytes: number; systemTotalBytes: number }; cpu: { cores: number; loadAverage: number[] }; counts: { users: number; documents: number; templates: number; analyses: number; liveSessions: number }; activity: { actor: string; action: string; item: string; at: string }[] };
+const formatBytes = (bytes: number) => bytes < 1024 ** 3 ? `${(bytes / 1024 ** 2).toFixed(0)} MB` : `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+const formatUptime = (seconds: number) => `${Math.floor(seconds / 86400)}d ${Math.floor(seconds % 86400 / 3600)}h ${Math.floor(seconds % 3600 / 60)}m`;
 
 const moduleMeta: Record<AccessModule, { label: string; description: string }> = {
   dashboard: { label: "Басты бет", description: "Жеке жұмыс кеңістігі мен көрсеткіштер" },
@@ -27,6 +31,23 @@ export default function AdminPanel({ props }: { props: WorkspaceProps }) {
   const [sortBy, setSortBy] = useState("name");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [overviewError, setOverviewError] = useState("");
+  useEffect(() => {
+    if (props.sessionUser?.role !== "admin") return;
+    let alive = true;
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/admin/overview", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Жүйе көрсеткіштерін алу мүмкін болмады");
+        if (alive) { setOverview(data); setOverviewError(""); }
+      } catch (error) { if (alive) setOverviewError(error instanceof Error ? error.message : "Жүйе көрсеткіштерін алу мүмкін болмады"); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [props.sessionUser?.role]);
   const verifiedCount = props.users.filter(user => user.emailVerified).length;
   const admins = props.users.filter(user => user.role === "admin").length;
   const employees = props.users.filter(user => user.role === "employee").length;
@@ -61,6 +82,19 @@ export default function AdminPanel({ props }: { props: WorkspaceProps }) {
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {[["Барлық пайдаланушы", props.users.length, "users", "slate"], ["Әкімшілер", admins, "shield", "violet"], ["Қызметкерлер", employees, "company", "blue"], ["Расталған аккаунттар", verifiedCount, "check", "emerald"]].map(([label, value, icon, tone]) => <div key={String(label)} className={`${card} flex items-center gap-4 p-4`}><span className={`flex size-11 items-center justify-center rounded-xl ${tone === "violet" ? "bg-violet-50 text-violet-700" : tone === "blue" ? "bg-blue-50 text-blue-700" : tone === "emerald" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}><Icon name={String(icon) as "users" | "shield" | "company" | "check"}/></span><div><p className="text-xs text-slate-500">{tr(String(label))}</p><p className="mt-1 text-2xl font-bold">{value}</p></div></div>)}
     </div>
+
+    <section className={`${card} space-y-4`} aria-label={tr("Сайттың жалпы күйі")}>
+      <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-lg font-semibold">{tr("Сайттың жалпы күйі")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Сервер, сақтау және соңғы пайдаланушы әрекеттері · 30 секунд сайын жаңарады")}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${overview && !overviewError ? "bg-emerald-50 text-emerald-700" : overviewError ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-500"}`}>{tr(overviewError ? "Көрсеткіштер қолжетімсіз" : overview ? "Сервер жұмыс істеп тұр" : "Жүктелуде…")}</span></div>
+      {overviewError && <p role="alert" className="text-sm text-rose-600">{tr(overviewError)}</p>}
+      {overview && <>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{[["Сервер uptime", formatUptime(overview.uptimeSeconds)], ["Белсенді сессиялар", overview.counts.liveSessions], ["Құжаттар", overview.counts.documents], ["Талдаулар", overview.counts.analyses], ["Үлгілер", overview.counts.templates]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3"><p className="text-xs text-slate-500">{tr(String(label))}</p><p className="mt-1 text-lg font-semibold">{value}</p></div>)}</div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 p-4"><div className="flex items-center justify-between gap-2"><h3 className="font-semibold">{tr("Жад пайдалануы")}</h3><span className="text-xs text-slate-500">{tr("ОЖ: {p0}", { p0: formatBytes(overview.memory.systemTotalBytes) })}</span></div><div className="mt-4 space-y-4"><div><div className="mb-1 flex justify-between text-xs"><span>{tr("Сервер процесі (RSS)")}</span><b>{formatBytes(overview.memory.rssBytes)}</b></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, overview.memory.rssBytes / overview.memory.systemTotalBytes * 100)}%` }}/></div></div><div><div className="mb-1 flex justify-between text-xs"><span>{tr("JavaScript heap")}</span><b>{formatBytes(overview.memory.heapUsedBytes)} / {formatBytes(overview.memory.heapTotalBytes)}</b></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-500" style={{ width: `${overview.memory.heapTotalBytes ? Math.min(100, overview.memory.heapUsedBytes / overview.memory.heapTotalBytes * 100) : 0}%` }}/></div></div><p className="text-xs text-slate-500">{tr("Жүйе бос жады")}: {formatBytes(overview.memory.systemTotalBytes - overview.memory.systemUsedBytes)} · {tr("CPU өзектері")}: {overview.cpu.cores} · {tr("load average")}: {overview.cpu.loadAverage.map(value => value.toFixed(2)).join(" / ")}</p></div></div>
+          <div className="rounded-xl border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between gap-2"><h3 className="font-semibold">{tr("Соңғы әрекеттер")}</h3><span className="text-xs text-slate-400">{tr("Кім не істеді")}</span></div><ul className="max-h-56 divide-y divide-slate-100 overflow-y-auto">{overview.activity.slice(0, 8).map((event, index) => <li key={`${event.actor}-${event.at}-${index}`} className="py-2.5"><p className="text-sm"><b>{event.actor}</b> · {tr(event.action)}</p><p className="mt-0.5 truncate text-xs text-slate-500">{event.item} · {event.at}</p></li>)}{!overview.activity.length && <li className="py-6 text-center text-sm text-slate-500">{tr("Әзірге әрекеттер жоқ")}</li>}</ul></div>
+        </div>
+        <p className="text-right text-[11px] text-slate-400">{tr("Көрсеткіш алынған уақыт")}: {new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(overview.capturedAt))}</p>
+      </>}
+    </section>
 
     <section className={`${card} space-y-4`}>
       <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">{tr("Пайдаланушылар және қолжетімділік")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Рөлді өзгертіңіз немесе бөлімдерге берілетін рұқсатты баптаңыз.")}</p></div><span className="text-xs text-slate-400">{tr("Көрсетілгені")}: {filtered.length} / {props.users.length}</span></div>
