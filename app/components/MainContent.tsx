@@ -14,6 +14,7 @@ import EditorPage from "./EditorPage";
 import HistoryPage from "./HistoryPage";
 import Icon from "./Icon";
 import TemplatesPage from "./TemplatesPage";
+import TemplateDesignerPage from "./TemplateDesignerPage";
 import type { WorkspaceProps } from "./workspace-context";
 
 export default function MainContent({ props }: { props: WorkspaceProps }) {
@@ -27,6 +28,7 @@ export default function MainContent({ props }: { props: WorkspaceProps }) {
     {tab === "company" && (props.activeWorkspaceId ? <CompanyWorkspacePage props={props} /> : <CompaniesPage user={sessionUser} setNotice={setNotice} onWorkspaceCreated={workspace => { props.setWorkspaces(current => [...current.filter(item => item.id !== workspace.id), workspace]); props.setActiveWorkspaceId(workspace.id); props.setTab("company"); }} />)}
     {tab === "compare" && <AnalysisPage props={props} />}
     {tab === "templates" && <TemplatesPage props={props} />}
+    {tab === "template-editor" && <TemplateDesignerPage props={props} />}
     {tab === "editor" && sessionUser && <EditorPage key={`${props.documentId || "new"}-${props.editorKey}`} props={props} />}
     {tab === "editor" && !sessionUser && <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><h1 className="text-xl font-bold">{tr("Редактор жабық")}</h1><p className="my-2 text-sm text-slate-500">{tr("Құжаттарды өңдеу және сақтау үшін жүйеге кіріңіз.")}</p><button onClick={() => props.setAuthMode("login")} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{tr("Кіру")}</button></section>}
     {tab === "history" && <HistoryPage props={props} />}
