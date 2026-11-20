@@ -46,7 +46,8 @@ async function handle(request: Request) {
         if (!point) return [];
         const kind = entry.type === "Құжат" ? "documents" : entry.type.includes("талдау") || entry.type === "ЖИ талдауы" ? "analyses" : entry.type === "Үлгі" ? "templates" : entry.type === "Компания" ? "companies" : "other";
         point[kind]++; point.total++;
-        return [{ actor: store.users.find(candidate => candidate.email === entry.owner)?.name || entry.owner, actorEmail: entry.owner, kind, action: entry.meta.split(" · ").slice(1).join(" · ") || entry.type, title: entry.title, at }];
+        const actor = store.users.find(candidate => candidate.email === entry.owner);
+        return [{ actor: actor?.name || entry.owner, actorEmail: entry.owner, actorRole: actor?.role || "unknown", kind, action: entry.meta.split(" · ").slice(1).join(" · ") || entry.type, title: entry.title, at }];
       }).reverse();
       const roles = ["admin", "employee", "user"].map(role => ({ role, count: store.users.filter(person => person.role === role).length }));
       return json({
