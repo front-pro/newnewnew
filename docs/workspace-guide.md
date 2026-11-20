@@ -41,6 +41,21 @@ embeds the bundled OFL-licensed Noto Sans font for Kazakh/Russian/English text.
 Signed-in analysis reports download as PDF; guest reports use the browser print
 preview. Exported Word files contain editable text paragraphs.
 
+## Review and follow-up
+
+The home page groups upcoming deadlines and approval requests into a short action
+summary. Company administrators can search and filter the audit log and export
+the currently loaded entries as CSV. The comparison page lets reviewers mark
+each detected change accepted or rejected; these decisions are stored in the
+current browser and are not shared with other users. PDF and image imports can
+be opened beside extracted text for manual OCR review. The original file remains
+in the browser and is not stored with the document.
+
+MFA and SSO are not implemented. They require selecting an identity provider and
+configuring its secrets and callback URLs before an authentication flow can be
+added safely. Server-side autosave, durable shared review decisions and original
+file retention also need explicit storage and retention policies.
+
 Run `npm run lint`, `npm run build`, `npm run test:ui`, `npm run test:documents`, `npm run test:ocr`
 and `npm run test:store` for validation. The file round-trip tests include Kazakh
 characters and malformed inputs. Runtime data and browser test artifacts are not
