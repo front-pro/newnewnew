@@ -41,6 +41,12 @@ embeds the bundled OFL-licensed Noto Sans font for Kazakh/Russian/English text.
 Signed-in analysis reports download as PDF; guest reports use the browser print
 preview. Exported Word files contain editable text paragraphs.
 
+The editor toolbar can change the selected text's font family and size. The
+default editor font is saved in browser preferences. To insert a table, set its
+row and column counts first. To resize an existing table, click inside it, set
+its width and dimensions in the toolbar, then apply the changes. The home page
+shows the eight latest activity entries and links to the full history.
+
 ## Review and follow-up
 
 The home page groups upcoming deadlines and approval requests into a short action
