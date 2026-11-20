@@ -8,7 +8,16 @@ export function sanitizeEditorHtml(value: string) {
     if (!allowedTags.has(tag)) return "";
     if (closing) return tag === "br" || tag === "img" ? "" : tag === "font" ? "</span>" : `</${tag}>`;
     if (tag === "br") return "<br>";
-    if (["table", "thead", "tbody", "tfoot", "tr", "td", "th"].includes(tag)) return closing ? `</${tag}>` : `<${tag}>`;
+    if (["table", "thead", "tbody", "tfoot", "tr", "td", "th"].includes(tag)) {
+      if (closing) return `</${tag}>`;
+      if (tag === "table") {
+        const style = rawAttrs.match(/\bstyle\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
+        const rawWidth = style.match(/(?:^|;)\s*width\s*:\s*(\d{1,3})%/i)?.[1] || rawAttrs.match(/\bwidth\s*=\s*["']?(\d{1,3})%?/i)?.[1];
+        const width = rawWidth ? Math.max(25, Math.min(100, Number(rawWidth))) : 100;
+        return `<table style="width:${width}%">`;
+      }
+      return `<${tag}>`;
+    }
     if (tag === "img") {
       const src = rawAttrs.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
       const alt = rawAttrs.match(/\balt\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
@@ -21,10 +30,12 @@ export function sanitizeEditorHtml(value: string) {
     }
     const styles = rawAttrs.match(/\bstyle\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
     const align = styles.match(/(?:^|;)\s*text-align\s*:\s*(left|center|right|justify)\s*(?:;|$)/i)?.[1]?.toLowerCase();
+    const rawFamily = styles.match(/(?:^|;)\s*font-family\s*:\s*([^;]+)\s*(?:;|$)/i)?.[1] || rawAttrs.match(/\bface\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
+    const family = ["Arial", "Georgia", "Times New Roman", "Verdana", "Noto Sans"].find(item => rawFamily.replace(/["']/g, "").split(",")[0].trim().toLowerCase() === item.toLowerCase());
     const rawFontSize = styles.match(/(?:^|;)\s*font-size\s*:\s*(\d{1,2})px\s*(?:;|$)/i)?.[1];
     const legacySize = rawAttrs.match(/\bsize\s*=\s*["']?([1-7])/i)?.[1];
     const fontSize = rawFontSize ? Math.max(10, Math.min(48, Number(rawFontSize))) : legacySize ? [10, 12, 14, 16, 20, 24, 32][Number(legacySize) - 1] : undefined;
-    const safeStyle = [align ? `text-align:${align}` : "", fontSize ? `font-size:${fontSize}px` : ""].filter(Boolean).join(";");
+    const safeStyle = [align ? `text-align:${align}` : "", fontSize ? `font-size:${fontSize}px` : "", family ? `font-family:${family}` : ""].filter(Boolean).join(";");
     return tag === "font" ? `<span${safeStyle ? ` style="${safeStyle}"` : ""}>` : safeStyle ? `<${tag} style="${safeStyle}">` : `<${tag}>`;
   });
 }

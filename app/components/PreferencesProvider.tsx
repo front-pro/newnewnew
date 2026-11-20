@@ -1,13 +1,14 @@
 "use client";
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 
-type Preferences = { animations: boolean; autosave: boolean; fontSize: number };
-const defaults: Preferences = { animations: true, autosave: true, fontSize: 16 };
+type Preferences = { animations: boolean; autosave: boolean; fontSize: number; fontFamily: string };
+const fontFamilies = ["Arial", "Georgia", "Times New Roman", "Verdana", "Noto Sans"];
+const defaults: Preferences = { animations: true, autosave: true, fontSize: 16, fontFamily: "Arial" };
 let memory = JSON.stringify(defaults);
 const key = "kt-workspace-preferences";
 function snapshot() { try { return localStorage.getItem(key) || memory; } catch { return memory; } }
 function parse(raw: string): Preferences {
-  try { const p = JSON.parse(raw); return { animations: p.animations !== false, autosave: p.autosave !== false, fontSize: [14, 16, 18, 20].includes(p.fontSize) ? p.fontSize : 16 }; } catch { return defaults; }
+  try { const p = JSON.parse(raw); return { animations: p.animations !== false, autosave: p.autosave !== false, fontSize: [14, 16, 18, 20].includes(p.fontSize) ? p.fontSize : 16, fontFamily: fontFamilies.includes(p.fontFamily) ? p.fontFamily : "Arial" }; } catch { return defaults; }
 }
 function subscribe(callback: () => void) {
   window.addEventListener("storage", callback); window.addEventListener("kt-preferences", callback);

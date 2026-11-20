@@ -15,7 +15,7 @@ const toolTitles: Record<string, string> = { bold: "Қалың", italic: "Көл
 
 export default function EditorPage({ props }: { props: WorkspaceProps }) {
   const { tr } = useLanguage();
-  const { preferences } = usePreferences();
+  const { preferences, update: updatePreferences } = usePreferences();
   const area = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const initialized = useRef(false);
@@ -25,6 +25,7 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
   const history = useRef({ values: [props.editorText], index: 0, typing: false, timer: 0 });
   const [query, setQuery] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [tableRows, setTableRows] = useState(4), [tableColumns, setTableColumns] = useState(4), [tableWidth, setTableWidth] = useState(100), [selectedTableIndex, setSelectedTableIndex] = useState<number | null>(null);
 
   function edit(value: string, isTyping = false) {
     const safe = sanitizeEditorHtml(value);
@@ -106,9 +107,29 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
     if (!area.current) return;
     if (savedRange.current) { const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(savedRange.current); }
     area.current.focus();
-    const cells = Array.from({ length: 4 }, () => "<td><br></td>").join("");
-    const rows = Array.from({ length: 4 }, () => `<tr>${cells}</tr>`).join("");
-    document.execCommand("insertHTML", false, `<table><tbody>${rows}</tbody></table><p><br></p>`);
+    const cells = Array.from({ length: tableColumns }, () => "<td><br></td>").join("");
+    const rows = Array.from({ length: tableRows }, () => `<tr>${cells}</tr>`).join("");
+    document.execCommand("insertHTML", false, `<table style="width:${tableWidth}%"><tbody>${rows}</tbody></table><p><br></p>`);
+    edit(area.current.innerHTML);
+  }
+  function applyTableSize() {
+    const table = selectedTableIndex === null ? null : area.current?.querySelectorAll("table")[selectedTableIndex];
+    if (!table || !area.current) return;
+    const width = Math.max(25, Math.min(100, tableWidth));
+    table.style.width = `${width}%`;
+    const body = table.tBodies[0] || table.createTBody();
+    while (body.rows.length > tableRows) body.deleteRow(-1);
+    while (body.rows.length < tableRows) {
+      const row = body.insertRow();
+      for (let column = 0; column < tableColumns; column++) { const cell = row.insertCell(); cell.innerHTML = "<br>"; }
+    }
+    for (const row of Array.from(table.rows)) {
+      while (row.cells.length > tableColumns) row.deleteCell(-1);
+      while (row.cells.length < tableColumns) {
+        const header = row.parentElement?.tagName === "THEAD" || row.cells[0]?.tagName === "TH";
+        const cell = document.createElement(header ? "th" : "td"); cell.innerHTML = "<br>"; row.append(cell);
+      }
+    }
     edit(area.current.innerHTML);
   }
   function insertWorksheet() {
@@ -142,8 +163,12 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
         <button disabled={!undoState.redo || props.editorBusy} onMouseDown={event => event.preventDefault()} onClick={() => undo(1)} aria-label={tr("Қайталау")} title={tr("Қайталау")} className="rounded-lg border border-slate-200 p-2 disabled:opacity-30"><Icon name="redo" className="size-4"/></button>
         <span className="mx-1 h-7 w-px bg-slate-200"/>
         {tools.map(([command, label, value]) => <button key={command} type="button" onMouseDown={event => { history.current.typing = false; toolbarClick(event, command, value); }} aria-label={tr(toolTitles[command])} title={tr(toolTitles[command])} className={`min-w-9 rounded-lg border border-slate-200 px-2 py-2 text-sm ${command === "bold" ? "font-bold" : command === "italic" ? "italic" : command === "underline" ? "underline" : ""}`}>{label}</button>)}
+        <select aria-label={tr("Қаріп түрі")} value={preferences.fontFamily} onMouseDown={rememberSelection} onChange={event => { format("fontName", event.target.value); updatePreferences({ fontFamily: event.target.value }); }} className="rounded-lg border border-slate-200 bg-white p-2 text-xs">{["Arial", "Georgia", "Times New Roman", "Verdana", "Noto Sans"].map(font => <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>)}</select>
         <select aria-label={tr("Қаріп өлшемі")} defaultValue="3" onMouseDown={rememberSelection} onChange={event => format("fontSize", event.target.value)} className="rounded-lg border border-slate-200 bg-white p-2 text-xs">{[["2", "10"], ["3", "12"], ["4", "16"], ["5", "20"], ["6", "24"]].map(([size, label]) => <option key={size} value={size}>{label}</option>)}</select>
-        <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={insertTable} className={`${button} gap-2 border border-slate-200 text-xs`}>{tr("4×4 кесте қосу")}</button>
+        <label className="flex items-center gap-1 text-xs text-slate-500">{tr("Жолдар")}<input aria-label={tr("Жолдар")} type="number" min={1} max={20} value={tableRows} onChange={event => setTableRows(Math.max(1, Math.min(20, Number(event.target.value) || 1)))} className="w-14 rounded-lg border border-slate-200 p-2"/></label>
+        <label className="flex items-center gap-1 text-xs text-slate-500">{tr("Бағандар")}<input aria-label={tr("Бағандар")} type="number" min={1} max={20} value={tableColumns} onChange={event => setTableColumns(Math.max(1, Math.min(20, Number(event.target.value) || 1)))} className="w-14 rounded-lg border border-slate-200 p-2"/></label>
+        <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={insertTable} className={`${button} gap-2 border border-slate-200 text-xs`}>{tr("Кесте қосу")}</button>
+        {selectedTableIndex !== null && <><label className="flex items-center gap-1 text-xs text-slate-500">{tr("Кесте ені")}<select aria-label={tr("Кесте ені")} value={tableWidth} onChange={event => setTableWidth(Number(event.target.value))} className="rounded-lg border border-slate-200 bg-white p-2">{[25,50,75,100].map(width=><option key={width} value={width}>{width}%</option>)}</select></label><button type="button" onClick={applyTableSize} className={`${button} bg-blue-50 px-2 text-xs text-blue-700`}>{tr("Өлшемді қолдану")}</button></>}
         <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={insertWorksheet} className={`${button} gap-2 border border-slate-200 text-xs`}>{tr("Excel торын қосу")}</button>
         <button type="button" onMouseDown={event => { rememberSelection(); event.preventDefault(); }} onClick={() => imageInput.current?.click()} className={`${button} gap-2 border border-slate-200 text-xs`}><Icon name="upload" className="size-4"/>{tr("Сурет қосу")}</button>
         <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif" className="hidden" onChange={event => { void insertImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
@@ -153,7 +178,7 @@ export default function EditorPage({ props }: { props: WorkspaceProps }) {
       </div>
     </section>
 
-    <div className="overflow-x-auto rounded-xl bg-slate-200 p-3 sm:p-6"><div className="mx-auto min-h-[1056px] w-full max-w-[794px] rounded-sm bg-white px-8 py-12 shadow-lg sm:px-20 sm:py-20"><div className="mb-8 flex items-center justify-between border-b border-slate-100 pb-3 text-[10px] uppercase tracking-wider text-slate-400"><span>{tr("Құжат парағы")}</span><span>{preferences.autosave ? tr("Жоба браузерде сақталады") : tr("Автосақтау өшірілген")}</span></div><div ref={node => { area.current = node; if (node && !initialized.current) { node.innerHTML = initialHtml; initialized.current = true; } }} contentEditable={!props.editorBusy} suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label={tr("Құжат мәтіні")} onInput={event => edit(event.currentTarget.innerHTML, true)} onClick={event => { const target = event.target; selectedImage.current = target instanceof HTMLImageElement ? target : null; rememberSelection(); }} onKeyUp={() => { selectedImage.current = window.getSelection()?.anchorNode?.parentElement?.closest("img") || null; rememberSelection(); }} style={{ fontSize: preferences.fontSize }} className="document-editor min-h-[850px] whitespace-pre-wrap break-words font-sans leading-8 text-slate-800 outline-none empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)] [&_h1]:my-4 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:my-3 [&_h2]:text-2xl [&_h2]:font-semibold [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-6 [&_ol]:list-decimal [&_ul]:list-disc" data-placeholder={tr("Мәтінді теріңіз немесе құралдар тақтасынан сурет қосыңыз…")}/><div className="mt-12 flex justify-between border-t border-slate-100 pt-3 text-xs text-slate-400"><span>{words.toLocaleString()} {tr("сөз")} · {plainText.length.toLocaleString()} {tr("таңба")}</span><span>{tr("Жеке кабинет")}</span></div></div></div>
+    <div className="overflow-x-auto rounded-xl bg-slate-200 p-3 sm:p-6"><div className="mx-auto min-h-[1056px] w-full max-w-[794px] rounded-sm bg-white px-8 py-12 shadow-lg sm:px-20 sm:py-20"><div className="mb-8 flex items-center justify-between border-b border-slate-100 pb-3 text-[10px] uppercase tracking-wider text-slate-400"><span>{tr("Құжат парағы")}</span><span>{preferences.autosave ? tr("Жоба браузерде сақталады") : tr("Автосақтау өшірілген")}</span></div><div ref={node => { area.current = node; if (node && !initialized.current) { node.innerHTML = initialHtml; initialized.current = true; } }} contentEditable={!props.editorBusy} suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label={tr("Құжат мәтіні")} onInput={event => edit(event.currentTarget.innerHTML, true)} onClick={event => { const target = event.target; selectedImage.current = target instanceof HTMLImageElement ? target : null; const table = target instanceof Element ? target.closest("table") : null; const tables = area.current ? Array.from(area.current.querySelectorAll("table")) : []; setSelectedTableIndex(table ? tables.indexOf(table) : null); if (table) { const body = table.querySelector("tbody"); setTableRows(Math.max(1, body?.rows.length || table.rows.length)); setTableColumns(Math.max(1, ...Array.from(table.rows, row => row.cells.length))); setTableWidth(Number(table.style.width.replace("%", "")) || 100); } rememberSelection(); }} onKeyUp={() => { selectedImage.current = window.getSelection()?.anchorNode?.parentElement?.closest("img") || null; rememberSelection(); }} style={{ fontSize: preferences.fontSize, fontFamily: preferences.fontFamily }} className="document-editor min-h-[850px] whitespace-pre-wrap break-words leading-8 text-slate-800 outline-none empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)] [&_h1]:my-4 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:my-3 [&_h2]:text-2xl [&_h2]:font-semibold [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-6 [&_ol]:list-decimal [&_ul]:list-disc [&_table]:my-4 [&_table]:border-collapse [&_table]:border [&_table]:border-slate-300 [&_td]:min-w-16 [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_th]:min-w-16 [&_th]:border [&_th]:border-slate-300 [&_th]:bg-slate-50 [&_th]:p-2" data-placeholder={tr("Мәтінді теріңіз немесе құралдар тақтасынан сурет қосыңыз…")}/><div className="mt-12 flex justify-between border-t border-slate-100 pt-3 text-xs text-slate-400"><span>{words.toLocaleString()} {tr("сөз")} · {plainText.length.toLocaleString()} {tr("таңба")}</span><span>{tr("Жеке кабинет")}</span></div></div></div>
     <div className="mx-auto w-full max-w-[820px]"><FileDropzone disabled={props.editorBusy} onRead={(text, name, pages) => { props.newDocument(); props.setEditorText(text); props.setEditorTitle(name); if (pages) props.setNotice(tr("OCR мәтінді таныды. Нәтижені түпнұсқамен салыстырып тексеріңіз.")); }} onError={props.setNotice}/></div>
   </div>;
 }
