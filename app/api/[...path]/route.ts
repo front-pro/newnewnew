@@ -128,8 +128,24 @@ async function handle(request: Request) {
       const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
       const title = String(body.title || "").trim(), desc = String(body.desc || "").trim(), text = String(body.body || ""), access = body.access === "employee" ? "employee" : "public";
       if (title.length < 3 || title.length > 160) return fail("Атауы 3–160 таңба болуы керек"); if (desc.length > 1000) return fail("Сипаттама тым ұзын"); if (!text.trim()) return fail("Үлгі мәтіні бос"); if (text.length > 200000) return fail("Үлгі мәтіні тым үлкен", 413);
-      const template: Template = { id: Math.max(0, ...store.templates.map(t => t.id)) + 1, title, desc, body: text, access, owner: user.email };
+      const designBody = body.design && typeof body.design === "object" ? body.design as Record<string, unknown> : {};
+      const theme = ["classic", "modern", "minimal"].includes(String(designBody.theme)) ? designBody.theme as "classic" | "modern" | "minimal" : "classic";
+      const accent = /^#[0-9a-fA-F]{6}$/.test(String(designBody.accent || "")) ? String(designBody.accent) : "#2563eb";
+      const template: Template = { id: Math.max(0, ...store.templates.map(t => t.id)) + 1, title, desc, body: text, access, owner: user.email, design: { theme, accent } };
       store.templates.push(template); store.log.push({ owner: user.email, type: "Үлгі", tone: "violet", title, meta: `${stamp()} · жаңа үлгі қосылды` }); await writeStore(store); return json(template, 201);
+    }
+    if (path[0] === "templates" && path[1] && method === "PATCH" && path.length === 2) {
+      if (!user || !["employee", "admin"].includes(role)) return fail("Үлгіні өзгертуге рұқсат жоқ", user ? 403 : 401);
+      if (!canAccessModule(user, "templates")) return fail("Үлгілер бөліміне қол жеткізуге рұқсат жоқ", 403);
+      const template = store.templates.find(item => item.id === Number(path[1])); if (!template) return fail("Үлгі табылмады", 404);
+      if (role !== "admin" && template.owner !== user.email) return fail("Тек өз үлгіңізді өзгерте аласыз", 403);
+      const body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
+      const title = String(body.title || "").trim(), desc = String(body.desc || "").trim(), text = String(body.body || ""), designBody = body.design && typeof body.design === "object" ? body.design as Record<string, unknown> : {};
+      if (title.length < 3 || title.length > 160) return fail("Атауы 3–160 таңба болуы керек"); if (desc.length > 1000) return fail("Сипаттама тым ұзын"); if (!text.trim()) return fail("Үлгі мәтіні бос"); if (text.length > 200000) return fail("Үлгі мәтіні тым үлкен", 413);
+      const theme = ["classic", "modern", "minimal"].includes(String(designBody.theme)) ? designBody.theme as "classic" | "modern" | "minimal" : "classic";
+      const accent = /^#[0-9a-fA-F]{6}$/.test(String(designBody.accent || "")) ? String(designBody.accent) : "#2563eb";
+      template.title = title; template.desc = desc; template.body = text; template.access = body.access === "employee" ? "employee" : "public"; template.design = { theme, accent };
+      store.log.push({ owner: user.email, type: "Үлгі", tone: "violet", title, meta: `${stamp()} · үлгі жаңартылды` }); await writeStore(store); return json(template);
     }
     if (path[0] === "templates" && path[1] && method === "DELETE") {
       if (!user || !["employee", "admin"].includes(role)) return fail("Үлгіні жоюға рұқсат жоқ", user ? 403 : 401);
