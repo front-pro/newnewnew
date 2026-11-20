@@ -23,13 +23,23 @@ export default function AdminPanel({ props }: { props: WorkspaceProps }) {
   const { tr, locale } = useLanguage();
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const verifiedCount = props.users.filter(user => user.emailVerified).length;
   const admins = props.users.filter(user => user.role === "admin").length;
   const employees = props.users.filter(user => user.role === "employee").length;
   const filtered = useMemo(() => props.users.filter(user => (roleFilter === "all" || user.role === roleFilter)
-    && `${user.name} ${user.email}`.toLocaleLowerCase(locale).includes(query.trim().toLocaleLowerCase(locale))), [props.users, roleFilter, query, locale]);
+    && (statusFilter === "all" || (statusFilter === "verified") === !!user.emailVerified)
+    && `${user.name} ${user.email}`.toLocaleLowerCase(locale).includes(query.trim().toLocaleLowerCase(locale)))
+    .sort((a, b) => {
+      if (sortBy === "role") return a.role.localeCompare(b.role, locale) || a.name.localeCompare(b.name, locale);
+      if (sortBy === "status") return Number(!!b.emailVerified) - Number(!!a.emailVerified) || a.name.localeCompare(b.name, locale);
+      if (sortBy === "role-desc") return b.role.localeCompare(a.role, locale) || a.name.localeCompare(b.name, locale);
+      if (sortBy === "status-desc") return Number(!!a.emailVerified) - Number(!!b.emailVerified) || a.name.localeCompare(b.name, locale);
+      return a.name.localeCompare(b.name, locale);
+    }), [props.users, roleFilter, statusFilter, sortBy, query, locale]);
 
   if (props.sessionUser?.role !== "admin") return <div className="mx-auto max-w-2xl space-y-6 py-8">
     <header className="text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><Icon name="shield" className="size-7"/></span><p className="mt-4 text-xs font-semibold uppercase tracking-[.18em] text-blue-600">{tr("Қауіпсіз аймақ")}</p><h1 className="mt-2 text-3xl font-bold">{tr("Әкімші панелі")}</h1><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">{tr("Жалғастыру үшін әкімші аккаунтының логині мен құпиясөзімен кіріңіз.")}</p></header>
@@ -54,7 +64,7 @@ export default function AdminPanel({ props }: { props: WorkspaceProps }) {
 
     <section className={`${card} space-y-4`}>
       <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">{tr("Пайдаланушылар және қолжетімділік")}</h2><p className="mt-1 text-sm text-slate-500">{tr("Рөлді өзгертіңіз немесе бөлімдерге берілетін рұқсатты баптаңыз.")}</p></div><span className="text-xs text-slate-400">{tr("Көрсетілгені")}: {filtered.length} / {props.users.length}</span></div>
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]"><label className="relative"><Icon name="search" className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"/><input value={query} onChange={event => setQuery(event.target.value)} placeholder={tr("Аты немесе email бойынша іздеу")} className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-500"/></label><select aria-label={tr("Рөл бойынша сүзу")} value={roleFilter} onChange={event => setRoleFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="all">{tr("Барлық рөлдер")}</option><option value="admin">{tr("Әкімші")}</option><option value="employee">{tr("Қызметкер")}</option><option value="user">{tr("Пайдаланушы")}</option></select></div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><label className="relative"><Icon name="search" className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"/><input value={query} onChange={event => setQuery(event.target.value)} placeholder={tr("Аты немесе email бойынша іздеу")} className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-500"/></label><select aria-label={tr("Рөл бойынша сүзу")} value={roleFilter} onChange={event => setRoleFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="all">{tr("Барлық рөлдер")}</option><option value="admin">{tr("Әкімші")}</option><option value="employee">{tr("Қызметкер")}</option><option value="user">{tr("Пайдаланушы")}</option></select><select aria-label={tr("Күй бойынша сүзу")} value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="all">{tr("Барлық күйлер")}</option><option value="verified">{tr("Расталған")}</option><option value="unverified">{tr("Расталмаған")}</option></select><select aria-label={tr("Сұрыптау тәсілі")} value={sortBy} onChange={event => setSortBy(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="name">{tr("Аты бойынша")}</option><option value="role">{tr("Рөлі: өсу ретімен")}</option><option value="role-desc">{tr("Рөлі: кему ретімен")}</option><option value="status">{tr("Күйі: расталған алдымен")}</option><option value="status-desc">{tr("Күйі: расталмаған алдымен")}</option></select></div>
       <div className="overflow-hidden rounded-xl border border-slate-200">
         <div className="hidden grid-cols-[minmax(220px,1fr)_150px_150px_190px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-500 md:grid"><span>{tr("Пайдаланушы")}</span><span>{tr("Рөлі")}</span><span>{tr("Аккаунт күйі")}</span><span className="text-right">{tr("Құқықтар")}</span></div>
         {filtered.map(user => {
