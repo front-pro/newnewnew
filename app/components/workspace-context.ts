@@ -5,7 +5,7 @@ import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from
 export type Tab = "dashboard" | "profile" | "compare" | "documents" | "templates" | "template-editor" | "editor" | "history" | "approvals" | "company" | "users";
 export type CompanyWorkspace = { id: string; name: string; role: "admin" | "member" };
 export type TemplateDesign = { theme: "classic" | "modern" | "minimal"; accent: string };
-export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean; design?: TemplateDesign };
+export type Template = { id: number; title: string; desc: string; body: string; access: string; owner?: string; locked?: boolean; category?: "document" | "table"; design?: TemplateDesign };
 export type Change = { id: number; type: string; title: string; description: string; a: string; b: string };
 export type AiComparisonFinding = { changeId: number; whatChanged: string; impact: string; severity: "low" | "medium" | "high"; recommendation: string };
 export type AiComparison = { summary: string; overallRisk: "low" | "medium" | "high"; findings: AiComparisonFinding[] };
@@ -58,6 +58,7 @@ export type WorkspaceProps = {
   templateDesc: string; setTemplateDesc: Dispatch<SetStateAction<string>>;
   templateBody: string; setTemplateBody: Dispatch<SetStateAction<string>>;
   templateAccess: string; setTemplateAccess: Dispatch<SetStateAction<string>>;
+  templateCategory: "document" | "table"; setTemplateCategory: Dispatch<SetStateAction<"document" | "table">>;
   templateDesign: TemplateDesign; setTemplateDesign: Dispatch<SetStateAction<TemplateDesign>>;
   templateEditingId: number | null; setTemplateEditingId: Dispatch<SetStateAction<number | null>>;
   beginTemplateDesign: (template?: Template) => void;
