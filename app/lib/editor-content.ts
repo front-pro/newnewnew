@@ -35,10 +35,17 @@ export function sanitizeEditorHtml(value: string) {
     const rawFontSize = styles.match(/(?:^|;)\s*font-size\s*:\s*(\d{1,2})px\s*(?:;|$)/i)?.[1];
     const legacySize = rawAttrs.match(/\bsize\s*=\s*["']?([1-7])/i)?.[1];
     const fontSize = rawFontSize ? Math.max(10, Math.min(48, Number(rawFontSize))) : legacySize ? [10, 12, 14, 16, 20, 24, 32][Number(legacySize) - 1] : undefined;
-    const colorValue = styles.match(/(?:^|;)\s*color\s*:\s*(#[\da-f]{3}(?:[\da-f]{3})?)\s*(?:;|$)/i)?.[1] || rawAttrs.match(/\bcolor\s*=\s*(["'])(#[\da-f]{3}(?:[\da-f]{3})?)\1/i)?.[2];
-    const backgroundValue = styles.match(/(?:^|;)\s*background-color\s*:\s*(#[\da-f]{3}(?:[\da-f]{3})?)\s*(?:;|$)/i)?.[1];
-    const color = colorValue && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(colorValue) ? colorValue : "";
-    const background = backgroundValue && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(backgroundValue) ? backgroundValue : "";
+    const colorValue = styles.match(/(?:^|;)\s*color\s*:\s*(#[\da-f]{3}(?:[\da-f]{3})?|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))\s*(?:;|$)/i)?.[1] || rawAttrs.match(/\bcolor\s*=\s*(["'])(#[\da-f]{3}(?:[\da-f]{3})?)\1/i)?.[2];
+    const backgroundValue = styles.match(/(?:^|;)\s*background-color\s*:\s*(#[\da-f]{3}(?:[\da-f]{3})?|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))\s*(?:;|$)/i)?.[1];
+    const safeColor = (input?: string) => {
+      if (!input) return "";
+      if (/^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(input)) return input;
+      const rgb = input.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+      if (!rgb || rgb.slice(1).some(channel => Number(channel) > 255)) return "";
+      return `#${rgb.slice(1).map(channel => Number(channel).toString(16).padStart(2, "0")).join("")}`;
+    };
+    const color = safeColor(colorValue);
+    const background = safeColor(backgroundValue);
     const safeStyle = [align ? `text-align:${align}` : "", fontSize ? `font-size:${fontSize}px` : "", family ? `font-family:${family}` : "", color ? `color:${color}` : "", background ? `background-color:${background}` : ""].filter(Boolean).join(";");
     return tag === "font" ? `<span${safeStyle ? ` style="${safeStyle}"` : ""}>` : safeStyle ? `<${tag} style="${safeStyle}">` : `<${tag}>`;
   });
