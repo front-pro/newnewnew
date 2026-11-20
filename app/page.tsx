@@ -24,6 +24,7 @@ type Template = {
     access: string;
     owner?: string;
     locked?: boolean;
+    category?: "document" | "table";
     design?: { theme: "classic" | "modern" | "minimal"; accent: string };
 };
 type Change = {
@@ -115,11 +116,13 @@ function Workspace() {
     const [authToken, setAuthToken] = useState("");
     const [users, setUsers] = useState<UserRow[]>([]), [templateTitle, setTemplateTitle] = useState(""), [templateDesc, setTemplateDesc] = useState(""), [templateBody, setTemplateBody] = useState(""), [templateAccess, setTemplateAccess] = useState("public");
     const [templateDesign, setTemplateDesign] = useState<{ theme: "classic" | "modern" | "minimal"; accent: string }>({ theme: "classic", accent: "#2563eb" });
+    const [templateCategory, setTemplateCategory] = useState<"document" | "table">("document");
     const [templateEditingId, setTemplateEditingId] = useState<number | null>(null);
     const beginTemplateDesign = (template?: Template) => {
         setOpenTemplate(null);
         setTemplateEditingId(template?.id || null);
         setTemplateTitle(template?.title || ""); setTemplateDesc(template?.desc || ""); setTemplateBody(template?.body || ""); setTemplateAccess(template?.access || "public");
+        setTemplateCategory(template?.category || (template?.body?.includes("<table") ? "table" : "document"));
         setTemplateDesign(template?.design || { theme: "classic", accent: "#2563eb" });
         setTab("template-editor");
     };
@@ -373,7 +376,7 @@ function Workspace() {
     const createTemplate = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         try {
-            const response = await fetch(templateEditingId ? `/api/templates/${templateEditingId}` : "/api/templates", { method: templateEditingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: templateTitle, desc: templateDesc, body: templateBody, access: templateAccess, design: templateDesign }) });
+            const response = await fetch(templateEditingId ? `/api/templates/${templateEditingId}` : "/api/templates", { method: templateEditingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: templateTitle, desc: templateDesc, body: templateBody, access: templateAccess, category: templateCategory, design: templateDesign }) });
             const data = await response.json();
             if (!response.ok)
                 throw new Error(data.error);
@@ -381,6 +384,7 @@ function Workspace() {
             setTemplateDesc("");
             setTemplateBody("");
             setTemplateEditingId(null);
+            setTemplateCategory("document");
             setOpenTemplate(null);
             if (sessionUser)
                 await refreshAccountData(sessionUser);
@@ -430,7 +434,7 @@ function Workspace() {
     const filteredTemplates = templates.filter(t => matchesSearch(templateQuery, [t.title, t.desc, t.locked ? "" : t.body, t.owner], locale));
     const filteredTemplateCount = filteredTemplates.length;
     const cards = filteredTemplates.map(template => <TemplateCard key={template.id} template={template} onOpen={()=>setOpenTemplate(template)} onUse={()=>void editTemplate(template)} onDownload={()=>downloadText(template.body, `template-${template.id}.txt`)} onDelete={!template.locked && sessionUser && (sessionUser.role === "admin" || template.owner === sessionUser.email) ? ()=>void deleteTemplate(template) : undefined}/>);
-    const viewProps: WorkspaceProps = { nav, tab, setTab, goBackTab, canGoBack: tabHistory.current.length > 0, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, analysisBusy, analysisSources, templates, editorText, setEditorText, editorTitle, setEditorTitle, editorKey, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, setHistory, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, templateDesign, setTemplateDesign, templateEditingId, setTemplateEditingId, beginTemplateDesign, startAnalysis, openAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, changePermissions, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
+    const viewProps: WorkspaceProps = { nav, tab, setTab, goBackTab, canGoBack: tabHistory.current.length > 0, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, analysisBusy, analysisSources, templates, editorText, setEditorText, editorTitle, setEditorTitle, editorKey, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, setHistory, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, templateCategory, setTemplateCategory, templateDesign, setTemplateDesign, templateEditingId, setTemplateEditingId, beginTemplateDesign, startAnalysis, openAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, changePermissions, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
     const dismissNotice = () => setNotice("");
     return <div className="workspace-shell min-h-screen text-slate-900">
     <Toast message={notice} dismiss={dismissNotice} />
