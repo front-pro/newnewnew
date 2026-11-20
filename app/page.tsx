@@ -95,7 +95,10 @@ function Workspace() {
     };
     const goBackTab = () => {
         const previous = tabHistory.current.pop();
-        if (previous) setTabState(previous);
+        if (previous) {
+            setTabState(previous);
+            window.history.replaceState({ page: previous }, "", previous === "dashboard" ? "/" : `/?page=${encodeURIComponent(previous)}`);
+        }
     };
     const [workspaces, setWorkspaces] = useState<CompanyWorkspace[]>([]);
     const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
