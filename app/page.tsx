@@ -72,9 +72,24 @@ function Workspace() {
     const [templateQuery, setTemplateQuery] = useState("");
     const [tab, setTabState] = useState<Tab>("dashboard");
     const tabHistory = useRef<Tab[]>([]);
+    useEffect(() => {
+        const validTabs: Tab[] = ["dashboard", "profile", "compare", "documents", "templates", "editor", "history", "approvals", "company", "users"];
+        const readLocation = () => {
+            const requested = new URL(window.location.href).searchParams.get("page") as Tab | null;
+            if (requested && validTabs.includes(requested)) setTabState(requested);
+            else setTabState("dashboard");
+        };
+        readLocation();
+        window.addEventListener("popstate", readLocation);
+        return () => window.removeEventListener("popstate", readLocation);
+    }, []);
     const setTab: Dispatch<SetStateAction<Tab>> = action => {
         const next = typeof action === "function" ? action(tab) : action;
-        if (next !== tab) tabHistory.current.push(tab);
+        if (next !== tab) {
+            tabHistory.current.push(tab);
+            const url = next === "dashboard" ? "/" : `/?page=${encodeURIComponent(next)}`;
+            window.history.pushState({ page: next }, "", url);
+        }
         setTabState(next);
     };
     const goBackTab = () => {
