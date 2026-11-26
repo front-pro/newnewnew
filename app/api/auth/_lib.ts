@@ -21,7 +21,7 @@ export type HistoryLogEntry = { owner: string; type: string; tone: string; title
 export type HistoryTrashEntry = HistoryLogEntry & { trashedAt: string };
 export type Store = {
   users: User[]; sessions: Record<string, SessionRecord>; verificationTokens: Record<string, { userId: string; expiresAt: string }>; passwordResetTokens: Record<string, { userId: string; expiresAt: string }>; approvals: ApprovalFlow[]; workspaces: Workspace[]; memberships: WorkspaceMembership[]; invitations: WorkspaceInvitation[]; groups: WorkspaceGroup[]; templates: Template[]; analyses: Record<string, { owner: string; result: Record<string, unknown> }>;
-  docs: Record<string, string>; versions: Record<string, number>; documents: SavedDocument[]; log: HistoryLogEntry[]; historyTrash: HistoryTrashEntry[]; nextId: number;
+  docs: Record<string, string>; versions: Record<string, number>; documents: SavedDocument[]; log: HistoryLogEntry[]; historyTrash: HistoryTrashEntry[]; adminSettings?: Record<string, unknown>; nextId: number;
 };
 const dataDirectory = process.env.KT_AGENT_DATA_DIR || path.join(process.cwd(), ".data");
 const pathToStore = path.join(dataDirectory, "agent.json");
@@ -106,7 +106,7 @@ function initialStore(): Store {
     users.push(makeUser("Әкімші", process.env.KT_BOOTSTRAP_ADMIN_EMAIL.trim().toLowerCase(), process.env.KT_BOOTSTRAP_ADMIN_PASSWORD, "admin"));
   }
   assignPlatformOperators(users);
-  return { users, sessions: {}, verificationTokens: {}, passwordResetTokens: {}, approvals: [], workspaces: [], memberships: [], invitations: [], groups: [], templates, analyses: {}, docs: {}, versions: {}, documents: [], log: [], historyTrash: [], nextId: 1 };
+  return { users, sessions: {}, verificationTokens: {}, passwordResetTokens: {}, approvals: [], workspaces: [], memberships: [], invitations: [], groups: [], templates, analyses: {}, docs: {}, versions: {}, documents: [], log: [], historyTrash: [], adminSettings: {}, nextId: 1 };
 }
 export async function readStore(): Promise<Store> {
   const db = await getDatabase();
@@ -130,7 +130,7 @@ export async function readStore(): Promise<Store> {
   const users = Array.isArray(raw.users) ? raw.users.map(user => ({ ...user, emailVerifiedAt: user.emailVerifiedAt === undefined ? "legacy" : user.emailVerifiedAt })) : defaults.users;
   const storedTemplates = Array.isArray(raw.templates) ? [...raw.templates] : [...defaults.templates];
   for (const starter of defaults.templates.filter(template => template.owner === "system")) if (!storedTemplates.some(template => template.id === starter.id)) storedTemplates.push(starter);
-  return { ...defaults, ...raw, documents: documents.map(document => ({ ...document, shares: document.shares || [], groupShares: document.groupShares || [], comments: document.comments || [] })), users: assignPlatformOperators(users), verificationTokens: raw.verificationTokens || {}, passwordResetTokens: raw.passwordResetTokens || {}, approvals: Array.isArray(raw.approvals) ? raw.approvals : [], workspaces: Array.isArray(raw.workspaces) ? raw.workspaces : [], memberships: Array.isArray(raw.memberships) ? raw.memberships : [], invitations: Array.isArray(raw.invitations) ? raw.invitations : [], groups: Array.isArray(raw.groups) ? raw.groups : [], templates: storedTemplates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: Array.isArray(raw.log) ? raw.log : [], historyTrash: Array.isArray(raw.historyTrash) ? raw.historyTrash : [], sessions: raw.sessions || {}, nextId: Number.isSafeInteger(raw.nextId) && raw.nextId! > 0 ? raw.nextId! : 1 };
+  return { ...defaults, ...raw, documents: documents.map(document => ({ ...document, shares: document.shares || [], groupShares: document.groupShares || [], comments: document.comments || [] })), users: assignPlatformOperators(users), verificationTokens: raw.verificationTokens || {}, passwordResetTokens: raw.passwordResetTokens || {}, approvals: Array.isArray(raw.approvals) ? raw.approvals : [], workspaces: Array.isArray(raw.workspaces) ? raw.workspaces : [], memberships: Array.isArray(raw.memberships) ? raw.memberships : [], invitations: Array.isArray(raw.invitations) ? raw.invitations : [], groups: Array.isArray(raw.groups) ? raw.groups : [], templates: storedTemplates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: Array.isArray(raw.log) ? raw.log : [], historyTrash: Array.isArray(raw.historyTrash) ? raw.historyTrash : [], adminSettings: raw.adminSettings && typeof raw.adminSettings === "object" && !Array.isArray(raw.adminSettings) ? raw.adminSettings : {}, sessions: raw.sessions || {}, nextId: Number.isSafeInteger(raw.nextId) && raw.nextId! > 0 ? raw.nextId! : 1 };
 }
 export async function writeStore(store: Store) {
   const db = await getDatabase();

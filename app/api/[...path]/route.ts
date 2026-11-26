@@ -32,6 +32,25 @@ const apiError = (e: unknown) => e instanceof SyntaxError ? fail("JSON сұра�
 async function handle(request: Request) {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent), method = request.method;
+    if (path[0] === "admin" && ["settings", "documents", "audit"].includes(path[1] || "")) {
+      const store = await readStore(), admin = await currentUser(request, store);
+      if (admin?.role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", admin ? 403 : 401);
+      if (path[1] === "settings" && method === "GET") return json(store.adminSettings || {});
+      if (path[1] === "settings" && method === "PATCH") {
+        const body = await request.json();
+        if (!body || typeof body !== "object" || Array.isArray(body) || !body.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) return fail("Баптаулар нысаны қате");
+        const allowed = new Set(["general", "appearance", "security", "documents", "storage", "notifications", "integrations", "license", "data"]);
+        const entries = Object.entries(body.settings as Record<string, unknown>);
+        if (entries.some(([key, value]) => !allowed.has(key) || !value || typeof value !== "object" || Array.isArray(value) || JSON.stringify(value).length > 12000)) return fail("Баптау бөлімі жарамсыз");
+        store.adminSettings = { ...(store.adminSettings || {}), ...Object.fromEntries(entries) };
+        store.log.push({ owner: admin.email, type: "Әкімші аудиті", tone: "blue", title: "Жүйе баптаулары жаңартылды", meta: `${stamp()} · ${entries.map(([key]) => key).join(", ")}` });
+        await writeStore(store);
+        return json(store.adminSettings);
+      }
+      if (path[1] === "documents" && method === "GET") return json(store.documents.filter(document => !document.deletedAt).map(document => ({ id: document.id, title: document.title, owner: store.users.find(person => person.email === document.owner)?.name || document.owner, ownerEmail: document.owner, source: document.source, createdAt: document.createdAt, updatedAt: document.updatedAt, versions: document.versions.length, status: store.approvals.some(flow => flow.documentId === document.id && flow.status === "pending") ? "review" : "stored" })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+      if (path[1] === "audit" && method === "GET") return json(store.log.slice(-500).reverse().map((entry, index) => ({ id: `${entry.owner}-${entry.meta}-${index}`, actor: store.users.find(person => person.email === entry.owner)?.name || entry.owner, email: entry.owner, type: entry.type, title: entry.title, at: entry.meta.split(" · ")[0] || "", details: entry.meta.split(" · ").slice(1).join(" · ") })));
+      return fail("API маршруты табылмады", 404);
+    }
     if (path[0] === "admin" && path[1] === "act-as" && path.length === 2) {
       const store = await readStore(), targetToken = getSessionToken(request), adminToken = decodeURIComponent(request.headers.get("cookie")?.split(";").map(value => value.trim()).find(value => value.startsWith("kt_admin_session="))?.slice("kt_admin_session=".length) || ""), adminId = sessionUserId(store.sessions[adminToken]), originalAdmin = store.users.find(person => person.id === adminId);
       if (method === "GET") return json({ active: !!originalAdmin && targetToken !== adminToken });
