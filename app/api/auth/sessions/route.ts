@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { appendAuditEvent, currentUser, getSessionToken, readStore, sessionUserId, withStoreLock, withStoreReadLock, writeStore } from "../_lib";
+import { appendAuditEvent, cookieHeader, currentUser, getSessionToken, readStore, sessionUserId, withStoreLock, withStoreReadLock, writeStore } from "../_lib";
 
 async function get(request: Request) {
   const store = await readStore(), user = await currentUser(request, store);
@@ -27,5 +27,23 @@ async function post(request: Request) {
   });
 }
 
+async function remove(request: Request) {
+  return withStoreLock(async () => {
+    const store = await readStore(), user = await currentUser(request, store);
+    if (!user) return NextResponse.json({ error: "Жүйеге кіріңіз" }, { status: 401 });
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body.id !== "string") return NextResponse.json({ error: "Сессия идентификаторы қажет" }, { status: 400 });
+    const entry = Object.entries(store.sessions).find(([, session]) => typeof session !== "string" && session.id === body.id && sessionUserId(session) === user.id);
+    if (!entry) return NextResponse.json({ error: "Сессия табылмады" }, { status: 404 });
+    delete store.sessions[entry[0]];
+    await writeStore(store);
+    await appendAuditEvent({ actorId: user.id, action: "auth.revoke_session", resourceType: "session", resourceId: body.id });
+    const response = NextResponse.json({ ok: true, current: entry[0] === getSessionToken(request) }, { headers: { "Cache-Control": "no-store" } });
+    if (entry[0] === getSessionToken(request)) response.headers.set("Set-Cookie", cookieHeader(""));
+    return response;
+  });
+}
+
 export const GET = (request: Request) => withStoreReadLock(() => get(request));
 export const POST = (request: Request) => post(request);
+export const DELETE = (request: Request) => remove(request);

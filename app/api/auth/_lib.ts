@@ -174,6 +174,13 @@ export async function readWorkspaceAudit(workspaceId: string, limit = 100) {
     return { ...event, metadata: JSON.parse(event.metadata) };
   });
 }
+export async function readUserAudit(actorId: string, limit = 30) {
+  const db = await getDatabase();
+  return db.prepare("SELECT id, action, resource_type AS resourceType, resource_id AS resourceId, created_at AS createdAt, metadata FROM audit_events WHERE actor_id = ? ORDER BY created_at DESC LIMIT ?").all(actorId, Math.max(1, Math.min(100, limit))).map((row: unknown) => {
+    const event = row as { metadata: string; [key: string]: unknown };
+    return { ...event, metadata: JSON.parse(event.metadata) };
+  });
+}
 export const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 export async function deliverAuthEmail(to: string, subject: string, text: string) {
   const endpoint = process.env.KT_EMAIL_DELIVERY_URL;
