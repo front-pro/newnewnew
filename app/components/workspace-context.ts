@@ -11,7 +11,7 @@ export type AiComparisonFinding = { changeId: number; whatChanged: string; impac
 export type AiComparison = { summary: string; overallRisk: "low" | "medium" | "high"; findings: AiComparisonFinding[] };
 export type Report = { id: number; isSaved?: boolean; summary: string; metrics: { total: number; conflicts: number; lost: number; news: number; changed: number }; changes: Change[]; aiAnalysis?: AiComparison; aiAnalysisError?: string };
 export type SessionUser = { id: string; name: string; email: string; role: string; permissions?: AccessModule[] | null; platformRole?: "operator" | null; company?: string; position?: string; avatar?: string | null; emailVerified?: boolean };
-export type UserRow = { name: string; email: string; role: string; permissions?: AccessModule[]; emailVerified?: boolean };
+export type UserRow = { id?: string; name: string; email: string; role: string; permissions?: AccessModule[]; emailVerified?: boolean; avatar?: string | null; company?: string; position?: string; documents?: { id: string; title: string; source: string; createdAt: string; updatedAt: string }[]; activity?: { type: string; title: string; meta: string; documentId?: string }[] };
 export type HistoryRow = { title: string; type: string; meta: string; documentId?: string };
 export type AuthMode = "login" | "register" | "verify" | "reset" | "reset-confirm" | null;
 
@@ -27,6 +27,9 @@ export type WorkspaceProps = {
   setActiveWorkspaceId: Dispatch<SetStateAction<string | null>>;
   setOpenTemplate: Dispatch<SetStateAction<Template | null>>;
   sessionUser: SessionUser | null;
+  isImpersonating: boolean;
+  startImpersonation: (email: string) => Promise<void>;
+  stopImpersonation: () => Promise<void>;
   setSessionUser: Dispatch<SetStateAction<SessionUser | null>>;
   logout: () => Promise<void>;
   setAuthMode: Dispatch<SetStateAction<AuthMode>>;

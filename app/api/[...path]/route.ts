@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import os from "node:os";
-import { consumeAuthRateLimit, currentUser, readStore, stamp, withStoreLock, withStoreReadLock, writeStore } from "../auth/_lib";
+import { consumeAuthRateLimit, cookieHeader, createSession, currentUser, getSessionToken, publicUser, readStore, sessionUserId, stamp, withStoreLock, withStoreReadLock, writeStore } from "../auth/_lib";
 import { analyzeComparison, type ComparisonChangeInput } from "../../lib/ai-comparison";
 import type { Template, User } from "../auth/_lib";
 import { handleApprovalRequest, handleDocumentRequest } from "../documents-handler";
@@ -32,6 +32,27 @@ const apiError = (e: unknown) => e instanceof SyntaxError ? fail("JSON сұра�
 async function handle(request: Request) {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent), method = request.method;
+    if (path[0] === "admin" && path[1] === "act-as" && path.length === 2) {
+      const store = await readStore(), targetToken = getSessionToken(request), adminToken = decodeURIComponent(request.headers.get("cookie")?.split(";").map(value => value.trim()).find(value => value.startsWith("kt_admin_session="))?.slice("kt_admin_session=".length) || ""), adminId = sessionUserId(store.sessions[adminToken]), originalAdmin = store.users.find(person => person.id === adminId);
+      if (method === "GET") return json({ active: !!originalAdmin && targetToken !== adminToken });
+      if (method !== "POST") return fail("Әдіс қолдау таппайды", 405);
+      const body = await request.json();
+      if (body.action === "stop") {
+        if (!originalAdmin) return fail("Әкімші сессиясы табылмады", 401);
+        if (targetToken && targetToken !== adminToken) delete store.sessions[targetToken];
+        store.log.push({ owner: originalAdmin.email, type: "Әкімші аудиті", tone: "blue", title: "Пайдаланушы аккаунтын қарау аяқталды", meta: `${stamp()} · ${originalAdmin.email}` });
+        await writeStore(store);
+        const response = json({ user: publicUser(originalAdmin) }); response.headers.append("Set-Cookie", cookieHeader(adminToken)); response.headers.append("Set-Cookie", `kt_admin_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`); return response;
+      }
+      const admin = await currentUser(request, store);
+      if (!admin || admin.role !== "admin" || adminToken) return fail("Бұл әрекет тек әкімшіге қолжетімді", 403);
+      const target = store.users.find(person => person.email === String(body.email || "").toLowerCase());
+      if (!target || target.id === admin.id) return fail("Пайдаланушы табылмады", 404);
+      const impersonationToken = createSession(store, target, request);
+      store.log.push({ owner: admin.email, type: "Әкімші аудиті", tone: "blue", title: `${target.email} аккаунтын қарау басталды`, meta: `${stamp()} · ${admin.email}` });
+      await writeStore(store);
+      const response = json({ user: publicUser(target) }); response.headers.append("Set-Cookie", cookieHeader(impersonationToken)); response.headers.append("Set-Cookie", `kt_admin_session=${encodeURIComponent(targetToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${process.env.NODE_ENV === "production" ? "; Secure" : ""}`); return response;
+    }
     if (path[0] === "admin" && path[1] === "overview" && path.length === 2 && method === "GET") {
       const store = await readStore(), user = await currentUser(request, store);
       if (user?.role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
@@ -197,7 +218,7 @@ async function handle(request: Request) {
       await writeStore(store);
       return json({ ok: true });
     }
-    if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ name, email, role: userRole, permissions, emailVerifiedAt }) => ({ name, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions }), emailVerified: !!emailVerifiedAt }))); }
+    if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ id, name, email, role: userRole, permissions, emailVerifiedAt, avatar, company, position }) => ({ id, name, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions }), emailVerified: !!emailVerifiedAt, avatar: avatar || null, company: company || "", position: position || "", documents: store.documents.filter(document => document.owner === email && !document.deletedAt).map(({ id: documentId, title, source, createdAt, updatedAt }) => ({ id: documentId, title, source, createdAt, updatedAt })), activity: store.log.filter(entry => entry.owner === email).slice(-20).reverse().map(({ type, title, meta, documentId }) => ({ type, title, meta, documentId })) }))); }
     if (path[0] === "users" && path[1] && method === "PATCH") {
       if (!user || role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
       const email = path[1], body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");

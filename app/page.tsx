@@ -54,11 +54,17 @@ type SessionUser = {
     emailVerified?: boolean;
 };
 type UserRow = {
+    id?: string;
     name: string;
     email: string;
     role: string;
     permissions?: AccessModule[];
     emailVerified?: boolean;
+    avatar?: string | null;
+    company?: string;
+    position?: string;
+    documents?: { id: string; title: string; source: string; createdAt: string; updatedAt: string }[];
+    activity?: { type: string; title: string; meta: string; documentId?: string }[];
 };
 const sampleA = `1.1. Департамент ұйымның құрылымдық бөлімшесі болып табылады.\n2.1. Құжаттарды қағаз және электронды түрде архивтеуді қамтамасыз ету.\n3.1. Ақпараттық жүйелердің қауіпсіздігін тексеру жүргізіледі.\n3.2. Ақпараттық жүйелерді әзірлеу ұйымдастырылады.`;
 const sampleB = `1.1. Департамент ұйымның құрылымдық бөлімшесі болып табылады.\n2.1. Жасанды интеллект негізіндегі құжаттарды автоматты талдауды қамтамасыз ету.\n3.1. Ақпараттық жүйелердің қауіпсіздігін тексеру және әзірлеу жүргізіледі.\n3.2. Ақпараттық жүйелердің қауіпсіздігін тексеру жүргізіледі.`;
@@ -111,7 +117,7 @@ function Workspace() {
     const [editorKey, setEditorKey] = useState(0);
     const [editorWorkspaceId, setEditorWorkspaceId] = useState<string | null>(null);
     const [openTemplate, setOpenTemplate] = useState<Template | null>(null), [notice, setNotice] = useState(""), [history, setHistory] = useState<HistoryRow[]>([]), [ready, setReady] = useState(false);
-    const [sessionUser, setSessionUser] = useState<SessionUser | null>(null), [authMode, setAuthMode] = useState<"login" | "register" | "verify" | "reset" | "reset-confirm" | null>(null);
+    const [sessionUser, setSessionUser] = useState<SessionUser | null>(null), [authMode, setAuthMode] = useState<"login" | "register" | "verify" | "reset" | "reset-confirm" | null>(null), [isImpersonating, setIsImpersonating] = useState(false);
     const [authName, setAuthName] = useState(""), [authEmail, setAuthEmail] = useState(""), [authPassword, setAuthPassword] = useState(""), [authBusy, setAuthBusy] = useState(false);
     const [authToken, setAuthToken] = useState("");
     const [users, setUsers] = useState<UserRow[]>([]), [templateTitle, setTemplateTitle] = useState(""), [templateDesc, setTemplateDesc] = useState(""), [templateBody, setTemplateBody] = useState(""), [templateAccess, setTemplateAccess] = useState("public");
@@ -178,7 +184,19 @@ function Workspace() {
                 await restoreAccountDocument();
             }
         }).catch(() => { });
+        fetch("/api/admin/act-as", { cache: "no-store" }).then(response => response.json()).then(data => setIsImpersonating(!!data.active)).catch(() => {});
     }, [refreshAccountData, restoreAccountDocument]);
+    const startImpersonation = useCallback(async (email: string) => {
+        const response = await fetch("/api/admin/act-as", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+        const data = await response.json(); if (!response.ok) throw new Error(data.error || tr("Аккаунтты ашу мүмкін болмады"));
+        setIsImpersonating(true); setSessionUser(data.user); setTab("dashboard"); setActiveWorkspaceId(null); setNotice(tr("Пайдаланушы аккаунты ашылды. Қайтару батырмасы жоғарғы панельде."));
+        await refreshAccountData(data.user);
+    }, [refreshAccountData, tr]);
+    const stopImpersonation = useCallback(async () => {
+        const response = await fetch("/api/admin/act-as", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
+        const data = await response.json(); if (!response.ok) throw new Error(data.error || tr("Әкімші аккаунтына оралу мүмкін болмады"));
+        setIsImpersonating(false); setSessionUser(data.user); setTab("users"); await refreshAccountData(data.user);
+    }, [refreshAccountData, tr]);
     useEffect(() => {
         if (ready) { if (preferences.autosave) localStorage.setItem("kt-agent-state", JSON.stringify({ editorText })); else localStorage.removeItem("kt-agent-state"); }
     }, [ready, editorText, preferences.autosave]);
@@ -347,6 +365,7 @@ function Workspace() {
         finally { setAuthBusy(false); }
     };
     const logout = async () => {
+        if (isImpersonating) await stopImpersonation();
         let serverLogoutFailed = false;
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 8000);
@@ -401,7 +420,7 @@ function Workspace() {
             const data = await response.json();
             if (!response.ok)
                 throw new Error(data.error);
-            setUsers(current => current.map(item => item.email === email ? data : item));
+            setUsers(current => current.map(item => item.email === email ? { ...item, ...data } : item));
             setNotice(tr("Пайдаланушы рөлі жаңартылды."));
         }
         catch (error) {
@@ -413,7 +432,7 @@ function Workspace() {
             const response = await fetch(`/api/users/${encodeURIComponent(email)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ permissions }) });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || "Қолжетімділікті өзгерту мүмкін болмады");
-            setUsers(current => current.map(item => item.email === email ? data : item));
+            setUsers(current => current.map(item => item.email === email ? { ...item, ...data } : item));
             setNotice(tr("Қолжетімділік жаңартылды."));
         } catch (error) { setNotice(error instanceof Error ? tr(error.message) : tr("Қолжетімділікті өзгерту мүмкін болмады")); }
     };
@@ -434,10 +453,11 @@ function Workspace() {
     const filteredTemplates = templates.filter(t => matchesSearch(templateQuery, [t.title, t.desc, t.locked ? "" : t.body, t.owner], locale));
     const filteredTemplateCount = filteredTemplates.length;
     const cards = filteredTemplates.map(template => <TemplateCard key={template.id} template={template} onOpen={()=>setOpenTemplate(template)} onUse={()=>void editTemplate(template)} onDownload={()=>downloadText(template.body, `template-${template.id}.txt`)} onDelete={!template.locked && sessionUser && (sessionUser.role === "admin" || template.owner === sessionUser.email) ? ()=>void deleteTemplate(template) : undefined}/>);
-    const viewProps: WorkspaceProps = { nav, tab, setTab, goBackTab, canGoBack: tabHistory.current.length > 0, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, logout, setAuthMode, a, setA, b, setB, report, analysisBusy, analysisSources, templates, editorText, setEditorText, editorTitle, setEditorTitle, editorKey, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, setHistory, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, templateCategory, setTemplateCategory, templateDesign, setTemplateDesign, templateEditingId, setTemplateEditingId, beginTemplateDesign, startAnalysis, openAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, changePermissions, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
+    const viewProps: WorkspaceProps = { nav, tab, setTab, goBackTab, canGoBack: tabHistory.current.length > 0, workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setOpenTemplate, sessionUser, setSessionUser, isImpersonating, startImpersonation, stopImpersonation, logout, setAuthMode, a, setA, b, setB, report, analysisBusy, analysisSources, templates, editorText, setEditorText, editorTitle, setEditorTitle, editorKey, documentId, editorVersion, editorBusy, newDocument, openDocument, onDocumentsSaved, onDocumentDeleted, openTemplate, notice, setNotice, history, setHistory, templateQuery, setTemplateQuery, filteredTemplateCount, users, templateTitle, setTemplateTitle, templateDesc, setTemplateDesc, templateBody, setTemplateBody, templateAccess, setTemplateAccess, templateCategory, setTemplateCategory, templateDesign, setTemplateDesign, templateEditingId, setTemplateEditingId, beginTemplateDesign, startAnalysis, openAnalysis, handleFile, editTemplate, saveEditor, exportReport, createTemplate, changeRole, changePermissions, deleteTemplate, downloadText, cards, authMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification };
     const dismissNotice = () => setNotice("");
     return <div className="workspace-shell min-h-screen text-slate-900">
     <Toast message={notice} dismiss={dismissNotice} />
+    {isImpersonating && <div role="status" className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 bg-amber-400 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-md"><span>{tr("Сіз пайдаланушы аккаунтын әкімші ретінде қарап отырсыз")}: {sessionUser?.name} · {sessionUser?.email}</span><button onClick={() => void stopImpersonation().catch(error => setNotice(tr(error instanceof Error ? error.message : "Әкімші аккаунтына оралу мүмкін болмады")))} className="rounded-lg bg-amber-950 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-900">{tr("Әкімшіге оралу")}</button></div>}
     <AppHeader props={viewProps}/>
     <div className={`app-content ${tab === "company" ? "" : "xl:ml-64"}`}><MainContent props={viewProps}/><AppFooter /></div>
     <AuthDialog props={viewProps}/>
