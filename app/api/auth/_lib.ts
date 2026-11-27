@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { SavedDocument } from "../../lib/documents";
 import type { AccessModule } from "../../lib/access-control";
 
-export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; permissions?: AccessModule[]; platformRole?: "operator"; avatar?: string; company?: string; position?: string; emailVerifiedAt?: string | null };
+export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; permissions?: AccessModule[]; platformRole?: "operator"; avatar?: string; company?: string; position?: string; emailVerifiedAt?: string | null; suspendedAt?: string | null };
 export type SessionRecord = string | { id: string; userId: string; createdAt: string; expiresAt: string; userAgent: string };
 export type WorkspaceRole = "member" | "admin";
 export type Workspace = { id: string; name: string; ownerId: string; createdAt: string };
@@ -211,5 +211,5 @@ export function getSessionToken(request: Request) {
   try { return decodeURIComponent(item.slice("kt_session=".length)); } catch { return ""; }
 }
 export function cookieHeader(token: string) { return `kt_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${token ? 604800 : 0}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`; }
-export async function currentUser(request: Request, store?: Store) { const data = store || await readStore(); const id = sessionUserId(data.sessions[getSessionToken(request)]); return data.users.find(user => user.id === id) || null; }
+export async function currentUser(request: Request, store?: Store) { const data = store || await readStore(); const id = sessionUserId(data.sessions[getSessionToken(request)]); return data.users.find(user => user.id === id && !user.suspendedAt) || null; }
 export const stamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");

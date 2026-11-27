@@ -67,6 +67,7 @@ async function handle(request: Request) {
       if (!admin || admin.role !== "admin" || adminToken) return fail("Бұл әрекет тек әкімшіге қолжетімді", 403);
       const target = store.users.find(person => person.email === String(body.email || "").toLowerCase());
       if (!target || target.id === admin.id) return fail("Пайдаланушы табылмады", 404);
+      if (target.suspendedAt) return fail("Тоқтатылған аккаунтты ашуға болмайды", 403);
       const impersonationToken = createSession(store, target, request);
       store.log.push({ owner: admin.email, type: "Әкімші аудиті", tone: "blue", title: `${target.email} аккаунтын қарау басталды`, meta: `${stamp()} · ${admin.email}` });
       await writeStore(store);
@@ -239,7 +240,14 @@ async function handle(request: Request) {
       await writeStore(store);
       return json({ ok: true });
     }
-    if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ id, name, email, role: userRole, permissions, emailVerifiedAt, avatar, company, position }) => ({ id, name, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions }), emailVerified: !!emailVerifiedAt, avatar: avatar || null, company: company || "", position: position || "", documents: store.documents.filter(document => document.owner === email && !document.deletedAt).map(({ id: documentId, title, source, createdAt, updatedAt }) => ({ id: documentId, title, source, createdAt, updatedAt })), activity: store.log.filter(entry => entry.owner === email).slice(-20).reverse().map(({ type, title, meta, documentId }) => ({ type, title, meta, documentId })) }))); }
+    if (path[0] === "users" && method === "GET") {
+      if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
+      return json(store.users.map(({ id, name, email, role: userRole, permissions, emailVerifiedAt, avatar, company, position, suspendedAt }) => {
+        const activeSessions = Object.values(store.sessions).filter(session => sessionUserId(session) === id);
+        const lastSessionAt = activeSessions.map(session => typeof session === "string" ? "" : session.createdAt).filter(Boolean).sort().at(-1) || null;
+        return { id, name, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions }), emailVerified: !!emailVerifiedAt, suspendedAt: suspendedAt || null, activeSessionCount: activeSessions.length, lastSessionAt, avatar: avatar || null, company: company || "", position: position || "", documents: store.documents.filter(document => document.owner === email && !document.deletedAt).map(({ id: documentId, title, source, createdAt, updatedAt }) => ({ id: documentId, title, source, createdAt, updatedAt })), activity: store.log.filter(entry => entry.owner === email).slice(-20).reverse().map(({ type, title, meta, documentId }) => ({ type, title, meta, documentId })) };
+      }));
+    }
     if (path[0] === "users" && path[1] && method === "PATCH") {
       if (!user || role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
       const email = path[1], body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
@@ -247,8 +255,21 @@ async function handle(request: Request) {
       if (body.role !== undefined) {
         const nextRole = String(body.role); if (!["user", "employee", "admin"].includes(nextRole)) return fail("Рөл қате");
         if (email === user.email) return fail("Өз рөліңізді өзгертуге болмайды");
-        if (target.role === "admin" && nextRole !== "admin" && store.users.filter(item => item.role === "admin").length <= 1) return fail("Жүйеде кемінде бір әкімші қалуы керек", 409);
+        if (target.role === "admin" && nextRole !== "admin" && !target.suspendedAt && store.users.filter(item => item.role === "admin" && !item.suspendedAt).length <= 1) return fail("Жүйеде кемінде бір белсенді әкімші қалуы керек", 409);
         if (target.role !== nextRole) { target.role = nextRole as User["role"]; delete target.permissions; }
+      }
+      if (body.suspended !== undefined) {
+        if (typeof body.suspended !== "boolean") return fail("Аккаунт күйі қате");
+        if (target.id === user.id) return fail("Өз аккаунтыңызды тоқтата алмайсыз");
+        if (body.suspended && target.role === "admin" && !target.suspendedAt && store.users.filter(item => item.role === "admin" && !item.suspendedAt).length <= 1) return fail("Жүйеде кемінде бір белсенді әкімші қалуы керек", 409);
+        if (body.suspended && !target.suspendedAt) {
+          target.suspendedAt = new Date().toISOString();
+          for (const [token, session] of Object.entries(store.sessions)) if (sessionUserId(session) === target.id) delete store.sessions[token];
+          store.log.push({ owner: user.email, type: "Әкімші аудиті", tone: "rose", title: "Пайдаланушы аккаунты уақытша тоқтатылды", meta: `${stamp()} · ${target.email}` });
+        } else if (!body.suspended && target.suspendedAt) {
+          target.suspendedAt = null;
+          store.log.push({ owner: user.email, type: "Әкімші аудиті", tone: "blue", title: "Пайдаланушы аккаунты қайта қосылды", meta: `${stamp()} · ${target.email}` });
+        }
       }
       if (body.permissions !== undefined) {
         if (!Array.isArray(body.permissions) || body.permissions.some((value: unknown) => typeof value !== "string" || !accessModules.includes(value as typeof accessModules[number]))) return fail("Рұқсаттар тізімі қате");
@@ -256,7 +277,7 @@ async function handle(request: Request) {
         target.permissions = [...new Set(body.permissions as typeof accessModules[number][])];
       }
       await writeStore(store);
-      return json({ name: target.name, email: target.email, role: target.role, permissions: effectivePermissions(target), emailVerified: !!target.emailVerifiedAt });
+      return json({ name: target.name, email: target.email, role: target.role, permissions: effectivePermissions(target), emailVerified: !!target.emailVerifiedAt, suspendedAt: target.suspendedAt || null });
     }
     return fail("API маршрут табылмады", 404);
   } catch (error) { return apiError(error); }
