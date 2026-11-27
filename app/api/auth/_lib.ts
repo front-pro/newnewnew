@@ -4,6 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { SavedDocument } from "../../lib/documents";
 import type { AccessModule } from "../../lib/access-control";
+import { databaseSchema } from "./schema";
 
 export type User = { id: string; name: string; email: string; salt: string; hash: string; role: "user" | "employee" | "admin"; permissions?: AccessModule[]; platformRole?: "operator"; avatar?: string; company?: string; position?: string; emailVerifiedAt?: string | null; suspendedAt?: string | null };
 export type SessionRecord = string | { id: string; userId: string; createdAt: string; expiresAt: string; userAgent: string };
@@ -33,7 +34,7 @@ async function getDatabase() {
   if (!databaseReady) databaseReady = (async () => {
     await mkdir(dataDirectory, { recursive: true });
     const db = new DatabaseSync(pathToDatabase);
-    db.exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS auth_rate_limits (key_hash TEXT PRIMARY KEY, window_started_at INTEGER NOT NULL, attempts INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY, workspace_id TEXT, actor_id TEXT, action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT, created_at TEXT NOT NULL, metadata TEXT NOT NULL);");
+    db.exec(databaseSchema);
     db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)").run(new Date().toISOString());
     const row = db.prepare("SELECT payload FROM app_state WHERE id = 1").get() as { payload: string } | undefined;
     if (!row) {
@@ -54,6 +55,16 @@ async function getDatabase() {
         const sessions = Object.fromEntries(Object.entries(payload.sessions || {}).map(([token, session]) => [token, typeof session === "string" ? { id: randomBytes(12).toString("hex"), userId: session, createdAt: now, expiresAt, userAgent: "legacy-session" } : session]));
         db.prepare("UPDATE app_state SET payload = ?, updated_at = ? WHERE id = 1").run(JSON.stringify({ ...payload, sessions }), now);
         db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES(2, ?)").run(now);
+        db.exec("COMMIT");
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
+    }
+    if (!db.prepare("SELECT 1 FROM schema_migrations WHERE version = 3").get()) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const state = db.prepare("SELECT payload FROM app_state WHERE id = 1").get() as { payload: string };
+        const store = normalizeStore(JSON.parse(state.payload));
+        replaceRelationalRows(db, store);
+        db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES(3, ?)").run(new Date().toISOString());
         db.exec("COMMIT");
       } catch (error) { db.exec("ROLLBACK"); throw error; }
     }
@@ -108,11 +119,8 @@ function initialStore(): Store {
   assignPlatformOperators(users);
   return { users, sessions: {}, verificationTokens: {}, passwordResetTokens: {}, approvals: [], workspaces: [], memberships: [], invitations: [], groups: [], templates, analyses: {}, docs: {}, versions: {}, documents: [], log: [], historyTrash: [], adminSettings: {}, nextId: 1 };
 }
-export async function readStore(): Promise<Store> {
-  const db = await getDatabase();
-  const row = db.prepare("SELECT payload FROM app_state WHERE id = 1").get() as { payload: string } | undefined;
-  if (!row) throw new Error("Data store is not initialized");
-  const raw = JSON.parse(row.payload) as Omit<Partial<Store>, "documents"> & { documents?: SavedDocument[] | Record<string, LegacyDocument[]> };
+function normalizeStore(value: unknown): Store {
+  const raw = value as Omit<Partial<Store>, "documents"> & { documents?: SavedDocument[] | Record<string, LegacyDocument[]> };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Data store has an invalid format");
   const defaults = initialStore();
   // Older stores kept only the latest text per account. Preserve that snapshot;
@@ -132,9 +140,79 @@ export async function readStore(): Promise<Store> {
   for (const starter of defaults.templates.filter(template => template.owner === "system")) if (!storedTemplates.some(template => template.id === starter.id)) storedTemplates.push(starter);
   return { ...defaults, ...raw, documents: documents.map(document => ({ ...document, shares: document.shares || [], groupShares: document.groupShares || [], comments: document.comments || [] })), users: assignPlatformOperators(users), verificationTokens: raw.verificationTokens || {}, passwordResetTokens: raw.passwordResetTokens || {}, approvals: Array.isArray(raw.approvals) ? raw.approvals : [], workspaces: Array.isArray(raw.workspaces) ? raw.workspaces : [], memberships: Array.isArray(raw.memberships) ? raw.memberships : [], invitations: Array.isArray(raw.invitations) ? raw.invitations : [], groups: Array.isArray(raw.groups) ? raw.groups : [], templates: storedTemplates, analyses: raw.analyses || {}, docs: raw.docs || {}, versions: raw.versions || {}, log: Array.isArray(raw.log) ? raw.log : [], historyTrash: Array.isArray(raw.historyTrash) ? raw.historyTrash : [], adminSettings: raw.adminSettings && typeof raw.adminSettings === "object" && !Array.isArray(raw.adminSettings) ? raw.adminSettings : {}, sessions: raw.sessions || {}, nextId: Number.isSafeInteger(raw.nextId) && raw.nextId! > 0 ? raw.nextId! : 1 };
 }
+
+function replaceRelationalRows(db: DatabaseSync, store: Store) {
+  db.exec("DELETE FROM sessions; DELETE FROM verification_tokens; DELETE FROM password_reset_tokens; DELETE FROM workspace_memberships; DELETE FROM workspace_invitations; DELETE FROM workspace_groups; DELETE FROM analyses; DELETE FROM documents; DELETE FROM activity_log; DELETE FROM history_trash; DELETE FROM approvals; DELETE FROM workspaces; DELETE FROM templates; DELETE FROM users;");
+  const json = (value: unknown) => JSON.stringify(value);
+  const insertUser = db.prepare("INSERT INTO users(id, email, role, payload) VALUES(?, ?, ?, ?)");
+  for (const user of store.users) insertUser.run(user.id, user.email, user.role, json(user));
+  const insertSession = db.prepare("INSERT INTO sessions(token, user_id, expires_at, payload) VALUES(?, ?, ?, ?)");
+  for (const [token, value] of Object.entries(store.sessions)) {
+    const session = typeof value === "string" ? { id: "legacy", userId: value, createdAt: "", expiresAt: "", userAgent: "legacy-session" } : value;
+    insertSession.run(token, session.userId, session.expiresAt, json(value));
+  }
+  const insertVerification = db.prepare("INSERT INTO verification_tokens(token, user_id, expires_at, payload) VALUES(?, ?, ?, ?)");
+  for (const [token, value] of Object.entries(store.verificationTokens)) insertVerification.run(token, value.userId, value.expiresAt, json(value));
+  const insertReset = db.prepare("INSERT INTO password_reset_tokens(token, user_id, expires_at, payload) VALUES(?, ?, ?, ?)");
+  for (const [token, value] of Object.entries(store.passwordResetTokens)) insertReset.run(token, value.userId, value.expiresAt, json(value));
+  const insertWorkspace = db.prepare("INSERT INTO workspaces(id, owner_id, name, payload) VALUES(?, ?, ?, ?)");
+  for (const item of store.workspaces) insertWorkspace.run(item.id, item.ownerId, item.name, json(item));
+  const insertMembership = db.prepare("INSERT INTO workspace_memberships(workspace_id, user_id, role, payload) VALUES(?, ?, ?, ?)");
+  for (const item of store.memberships) insertMembership.run(item.workspaceId, item.userId, item.role, json(item));
+  const insertInvitation = db.prepare("INSERT INTO workspace_invitations(id, workspace_id, email, expires_at, payload) VALUES(?, ?, ?, ?, ?)");
+  for (const item of store.invitations) insertInvitation.run(item.id, item.workspaceId, item.email, item.expiresAt, json(item));
+  const insertGroup = db.prepare("INSERT INTO workspace_groups(id, workspace_id, name, payload) VALUES(?, ?, ?, ?)");
+  for (const item of store.groups) insertGroup.run(item.id, item.workspaceId, item.name, json(item));
+  const insertTemplate = db.prepare("INSERT INTO templates(id, owner, access, title, payload) VALUES(?, ?, ?, ?, ?)");
+  for (const item of store.templates) insertTemplate.run(item.id, item.owner, item.access, item.title, json(item));
+  const insertAnalysis = db.prepare("INSERT INTO analyses(id, owner, payload) VALUES(?, ?, ?)");
+  for (const [id, item] of Object.entries(store.analyses)) insertAnalysis.run(id, item.owner, json(item));
+  const insertDocument = db.prepare("INSERT INTO documents(id, owner, workspace_id, title, updated_at, deleted_at, payload) VALUES(?, ?, ?, ?, ?, ?, ?)");
+  for (const item of store.documents) insertDocument.run(item.id, item.owner, item.workspaceId || null, item.title, item.updatedAt, item.deletedAt || null, json(item));
+  const insertLog = db.prepare("INSERT INTO activity_log(owner, payload) VALUES(?, ?)");
+  for (const item of store.log) insertLog.run(item.owner, json(item));
+  const insertTrash = db.prepare("INSERT INTO history_trash(owner, payload) VALUES(?, ?)");
+  for (const item of store.historyTrash) insertTrash.run(item.owner, json(item));
+  const insertApproval = db.prepare("INSERT INTO approvals(id, document_id, workspace_id, requested_by, payload) VALUES(?, ?, ?, ?, ?)");
+  for (const item of store.approvals) insertApproval.run(item.id, item.documentId, item.workspaceId || null, item.requestedBy, json(item));
+}
+
+function readRelationalStore(db: DatabaseSync, snapshot: Store): Store {
+  const rows = (table: string) => db.prepare(`SELECT payload FROM ${table} ORDER BY rowid`).all() as { payload: string }[];
+  const parseRows = <T>(table: string) => rows(table).map(row => JSON.parse(row.payload) as T);
+  const keyedRows = <T>(table: string, keyColumn: string) => Object.fromEntries((db.prepare(`SELECT ${keyColumn}, payload FROM ${table} ORDER BY rowid`).all() as unknown as { payload: string; [key: string]: unknown }[]).map(row => [String(row[keyColumn]), JSON.parse(row.payload) as T]));
+  return {
+    ...snapshot,
+    users: assignPlatformOperators(parseRows<User>("users")),
+    sessions: keyedRows<SessionRecord>("sessions", "token"),
+    verificationTokens: keyedRows<{ userId: string; expiresAt: string }>("verification_tokens", "token"),
+    passwordResetTokens: keyedRows<{ userId: string; expiresAt: string }>("password_reset_tokens", "token"),
+    workspaces: parseRows<Workspace>("workspaces"),
+    memberships: parseRows<WorkspaceMembership>("workspace_memberships"),
+    invitations: parseRows<WorkspaceInvitation>("workspace_invitations"),
+    groups: parseRows<WorkspaceGroup>("workspace_groups"),
+    templates: parseRows<Template>("templates"),
+    analyses: keyedRows<{ owner: string; result: Record<string, unknown> }>("analyses", "id"),
+    documents: parseRows<SavedDocument>("documents"),
+    log: parseRows<HistoryLogEntry>("activity_log"),
+    historyTrash: parseRows<HistoryTrashEntry>("history_trash"),
+    approvals: parseRows<ApprovalFlow>("approvals"),
+  };
+}
+
+export async function readStore(): Promise<Store> {
+  const db = await getDatabase();
+  const row = db.prepare("SELECT payload FROM app_state WHERE id = 1").get() as { payload: string } | undefined;
+  if (!row) throw new Error("Data store is not initialized");
+  const snapshot = normalizeStore(JSON.parse(row.payload));
+  return readRelationalStore(db, snapshot);
+}
 export async function writeStore(store: Store) {
   const db = await getDatabase();
-  const save = () => db.prepare("INSERT INTO app_state(id, payload, updated_at) VALUES(1, ?, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at").run(JSON.stringify(store), new Date().toISOString());
+  const save = () => {
+    replaceRelationalRows(db, store);
+    db.prepare("INSERT INTO app_state(id, payload, updated_at) VALUES(1, ?, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at").run(JSON.stringify(store), new Date().toISOString());
+  };
   if (db.isTransaction) save();
   else { db.exec("BEGIN IMMEDIATE"); try { save(); db.exec("COMMIT"); } catch (error) { db.exec("ROLLBACK"); throw error; } }
 }
