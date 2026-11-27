@@ -10,6 +10,12 @@ current password before changing it and revokes other sessions. Preferences save
 language, theme, animation, draft autosave and font-size choices in the browser.
 System reduced-motion settings also disable motion.
 
+Account → Data and privacy can download a JSON copy of the profile, personal
+documents, analyses, audit activity, memberships and review participation.
+Company document bodies are excluded. Original uploaded files, browser-only
+preferences and review decisions are not retained by the server and cannot be
+included in that export.
+
 The editor keeps bounded undo/redo history, supports text search and wrapping,
 and displays word and character counts. Saving creates a document version.
 Comparison results preserve the analyzed input snapshot and show added, removed
