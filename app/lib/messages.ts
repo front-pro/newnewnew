@@ -3,6 +3,8 @@ export const messages: Record<string, readonly [string, string]> = {
   "Жүйені басқару": ["Управление системой", "System administration"],
   "Әкімші панелі": ["Панель администратора", "Admin panel"],
   "Әкімші шолуы": ["Обзор компании", "Company overview"],
+  "Мәзір": ["Меню", "Menu"],
+  "Негізгі мазмұнға өту": ["Перейти к основному содержимому", "Skip to main content"],
   "Осы компаниядағы сізге жіберілген бекіту сұраулары": ["Запросы на согласование для вас в этой компании", "Approval requests assigned to you in this company"],
   "Бекіту кезегін сүзу": ["Фильтр очереди согласования", "Filter approval queue"],
   "Кезекте": ["В очереди", "Pending"],
