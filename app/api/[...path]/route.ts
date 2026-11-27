@@ -90,11 +90,13 @@ async function handle(request: Request) {
         return [{ actor: actor?.name || entry.owner, actorEmail: entry.owner, actorRole: actor?.role || "unknown", kind, action: entry.meta.split(" · ").slice(1).join(" · ") || entry.type, title: entry.title, at }];
       }).reverse();
       const roles = ["admin", "employee", "user"].map(role => ({ role, count: store.users.filter(person => person.role === role).length }));
+      const completedApprovals = store.approvals.filter(flow => (flow.status === "approved" || flow.status === "rejected") && Date.parse(flow.requestedAt) > 0 && flow.steps.some(step => Date.parse(step.decidedAt || "") > 0));
+      const approvalMetrics = { pending: store.approvals.filter(flow => flow.status === "pending").length, completed: completedApprovals.length, averageHours: completedApprovals.length ? Math.round(completedApprovals.reduce((sum, flow) => { const finishedAt = Math.max(...flow.steps.map(step => Date.parse(step.decidedAt || "0")).filter(Number.isFinite)); return sum + Math.max(0, finishedAt - Date.parse(flow.requestedAt)) / 3600000; }, 0) / completedApprovals.length * 10) / 10 : 0 };
       return json({
         capturedAt: new Date(now).toISOString(), uptimeSeconds: Math.floor(process.uptime()),
         memory: { rssBytes: memory.rss, heapUsedBytes: memory.heapUsed, heapTotalBytes: memory.heapTotal, systemUsedBytes: totalMemory - freeMemory, systemTotalBytes: totalMemory },
         cpu: { cores: os.cpus().length, loadAverage: os.loadavg() },
-        days, daily, roles, verification: { verified: store.users.filter(person => !!person.emailVerifiedAt).length, unverified: store.users.filter(person => !person.emailVerifiedAt).length },
+        days, daily, roles, approvalMetrics, verification: { verified: store.users.filter(person => !!person.emailVerifiedAt).length, unverified: store.users.filter(person => !person.emailVerifiedAt).length },
         counts: { users: store.users.length, verifiedUsers: store.users.filter(person => !!person.emailVerifiedAt).length, documents: store.documents.length, templates: store.templates.length, analyses: Object.keys(store.analyses).length, liveSessions },
         activity: activity.slice(0, 500),
       });
