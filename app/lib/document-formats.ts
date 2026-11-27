@@ -16,9 +16,38 @@ function zipOffice(buffer: Buffer) { let total=0; return unzipSync(buffer,{filte
 function colIndex(ref:string) { const letters=ref.match(/^[A-Z]+/i)?.[0]?.toUpperCase()||"A";return [...letters].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0)-1; }
 function rowsHtml(rows:string[][],title?:string) { if(!rows.length)return "";const prefix=title?"<h2>"+htmlEscape(title)+"</h2>":"";return prefix+"<table><tbody>"+rows.map((row,i)=>"<tr>"+row.map(cell=>i===0?"<th>"+htmlEscape(cell)+"</th>":"<td>"+htmlEscape(cell)+"</td>").join("")+"</tr>").join("")+"</tbody></table>"; }
 function xlsxHtml(files:Record<string,Uint8Array>) {
- const shared=[...(new TextDecoder().decode(files["xl/sharedStrings.xml"]||new Uint8Array()).matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g))].map(m=>[...m[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(t=>xmlText(t[1])).join(""));
- const sheets=Object.keys(files).filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort((a,b)=>Number(a.match(/sheet(\d+)/)?.[1])-Number(b.match(/sheet(\d+)/)?.[1])).slice(0,10);
- return sheets.map((name,index)=>{const xml=new TextDecoder().decode(files[name]),rows:string[][]=[];for(const rm of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)){const row:string[]=[];for(const cm of rm[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){const attrs=cm[1],body=cm[2]||"",ref=attrs.match(/\br="([A-Z]+\d+)"/i)?.[1]||"",idx=ref?colIndex(ref):row.length;if(idx>49)continue;const type=attrs.match(/\bt="([^"]+)"/)?.[1],value=body.match(/<v>([\s\S]*?)<\/v>/)?.[1]||"",formula=body.match(/<f[^>]*>([\s\S]*?)<\/f>/)?.[1];let text=type==="s"?shared[Number(xmlText(value))]||"":type==="inlineStr"?[...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(t=>xmlText(t[1])).join(""):xmlText(value);if(!text&&formula)text="="+xmlText(formula);row[idx]=text;}if(row.length)rows.push(Array.from({length:Math.min(50,row.length)},(_,i)=>row[i]||""));if(rows.length>=500)break;}return rowsHtml(rows,"Sheet "+(index+1));}).join("");
+ const decode=new TextDecoder();
+ const shared=[...(decode.decode(files["xl/sharedStrings.xml"]||new Uint8Array()).matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g))].map(m=>[...m[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(t=>xmlText(t[1])).join(""));
+ const available=Object.keys(files).filter(name=>/^xl\/worksheets\/sheet\d+\.xml$/.test(name)).sort((a,b)=>Number(a.match(/sheet(\d+)/)?.[1])-Number(b.match(/sheet(\d+)/)?.[1]));
+ const relationships=new Map<string,string>();
+ const rels=decode.decode(files["xl/_rels/workbook.xml.rels"]||new Uint8Array());
+ for(const match of rels.matchAll(/<Relationship\b([^>]*)\/?\s*>/g)){
+  const id=match[1].match(/\bId="([^"]+)"/)?.[1],target=match[1].match(/\bTarget="([^"]+)"/)?.[1];
+  if(id&&target){const normalized=target.replace(/^\/+/,"");relationships.set(id,normalized.startsWith("xl/")?normalized:`xl/${normalized.replace(/^\.\//,"")}`);}
+ }
+ const workbook=decode.decode(files["xl/workbook.xml"]||new Uint8Array());
+ const listed=[...workbook.matchAll(/<sheet\b([^>]*)\/?\s*>/g)].flatMap(match=>{
+  const attrs=match[1],name=attrs.match(/\bname="([^"]*)"/)?.[1]||"",id=attrs.match(/\br:id="([^"]+)"/)?.[1]||"",path=relationships.get(id);
+  return path&&files[path]?[{path,title:xmlDecode(name)||`Sheet ${available.indexOf(path)+1}`}]:[];
+ });
+ const sheets=(listed.length?listed:available.map((path,index)=>({path,title:`Sheet ${index+1}`}))).slice(0,10);
+ return sheets.map(({path,title})=>{
+  const xml=decode.decode(files[path]),rows:string[][]=[];
+  for(const rm of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)){
+   const row:string[]=[];
+   for(const cm of rm[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){
+    const attrs=cm[1],body=cm[2]||"",ref=attrs.match(/\br="([A-Z]+\d+)"/i)?.[1]||"",idx=ref?colIndex(ref):row.length;
+    if(idx>49)continue;
+    const type=attrs.match(/\bt="([^"]+)"/)?.[1],value=body.match(/<v>([\s\S]*?)<\/v>/)?.[1]||"",formula=body.match(/<f[^>]*>([\s\S]*?)<\/f>/)?.[1];
+    let text=type==="s"?shared[Number(xmlText(value))]||"":type==="inlineStr"?[...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(t=>xmlText(t[1])).join(""):xmlText(value);
+    if(!text&&formula)text="="+xmlText(formula);
+    row[idx]=text;
+   }
+   if(row.length)rows.push(Array.from({length:Math.min(50,row.length)},(_,i)=>row[i]||""));
+   if(rows.length>=500)break;
+  }
+  return rowsHtml(rows,title);
+ }).join("");
 }
 function odsHtml(files:Record<string,Uint8Array>) {
  const xml=files["content.xml"]?new TextDecoder().decode(files["content.xml"]):"",tables=[...xml.matchAll(/<table:table\b[^>]*>([\s\S]*?)<\/table:table>/g)].slice(0,10);
@@ -84,26 +113,59 @@ export async function extractDocument(buffer: Buffer, extension: string) {
 
 
 function xlsxExport(html: string) {
-  const rows = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(row =>
+  const readRows = (table: string) => [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(row =>
     [...row[1].matchAll(/<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi)].map(cell => editorHtmlToText(cell[1]).replace(/\n/g, " ").trim())
-  ).filter(row => row.length).slice(0, 500);
-  if (!rows.length) rows.push(...editorHtmlToText(html).split(/\n+/).slice(0, 500).map(line => [line]));
+  ).filter(row => row.length).slice(0, 500).map(row => row.slice(0, 50));
+  const sheets: { name: string; rows: string[][] }[] = [];
+  let pendingName = "";
+  for (const block of html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>|<table\b[^>]*>[\s\S]*?<\/table>/gi)) {
+    if (block[1] !== undefined) {
+      pendingName = editorHtmlToText(block[1]).trim();
+      continue;
+    }
+    const rows = readRows(block[0]);
+    if (rows.length) sheets.push({ name: pendingName || `Sheet ${sheets.length + 1}`, rows });
+    pendingName = "";
+    if (sheets.length >= 10) break;
+  }
+  if (!sheets.length) {
+    const rows = editorHtmlToText(html).split(/\n+/).slice(0, 500).map(line => [line.slice(0, 32767)]);
+    sheets.push({ name: "Sheet 1", rows });
+  }
   const escape = (value: string) => value.replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
+  const usedSheetNames = new Set<string>();
+  const safeSheetName = (name: string, index: number) => {
+    const base = (name.replace(/[\\/?*\[\]:]/g, " ").replace(/^'+|'+$/g, "").trim() || `Sheet ${index + 1}`).slice(0, 31);
+    let unique = base, suffix = 2;
+    while (usedSheetNames.has(unique.toLowerCase())) {
+      const tag = ` (${suffix++})`;
+      unique = `${base.slice(0, 31 - tag.length)}${tag}`;
+    }
+    usedSheetNames.add(unique.toLowerCase());
+    return unique;
+  };
   const column = (n: number) => { let label = ""; for (n++; n; n = Math.floor((n - 1) / 26)) label = String.fromCharCode(65 + (n - 1) % 26) + label; return label; };
-  const sheet = rows.map((row, r) => "<row r=\"" + (r + 1) + "\">" + row.slice(0, 50).map((value, c) => {
+  const sheetXml = (rows: string[][]) => rows.map((row, r) => "<row r=\"" + (r + 1) + "\">" + row.map((rawValue, c) => {
+    const value = rawValue.slice(0, 32767);
     const ref = column(c) + (r + 1);
-    const formula = value.match(/^=([A-Z][A-Z0-9_.]*\(.+\))$/i)?.[1];
+    const formula = value.match(/^=(SUM|AVERAGE|MIN|MAX|COUNT|COUNTA)\((\$?[A-Z]{1,3}\$?\d+)(?::(\$?[A-Z]{1,3}\$?\d+))?\)$/i)?.[0].slice(1);
     if (formula) return "<c r=\"" + ref + "\"><f>" + escape(formula) + "</f><v></v></c>";
     if (/^-?\d+(?:\.\d+)?$/.test(value)) return "<c r=\"" + ref + "\"><v>" + value + "</v></c>";
     return "<c r=\"" + ref + "\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" + escape(value) + "</t></is></c>";
   }).join("") + "</row>").join("");
+  const namedSheets = sheets.map((item, index) => ({ ...item, name: safeSheetName(item.name, index) }));
+  const workbookSheets = namedSheets.map((item, index) => `<sheet name=\"${escape(item.name)}\" sheetId=\"${index + 1}\" r:id=\"rId${index + 1}\"/>`).join("");
+  const worksheetOverrides = namedSheets.map((_, index) => `<Override PartName=\"/xl/worksheets/sheet${index + 1}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>`).join("");
+  const worksheetRelationships = namedSheets.map((_, index) => `<Relationship Id=\"rId${index + 1}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet${index + 1}.xml\"/>`).join("");
   const files: Record<string, Uint8Array> = {
-    "[Content_Types].xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
+    "[Content_Types].xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + worksheetOverrides + '</Types>'),
     "_rels/.rels": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
-    "xl/workbook.xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets><calcPr calcMode="auto"/></workbook>'),
-    "xl/_rels/workbook.xml.rels": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'),
-    "xl/worksheets/sheet1.xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + sheet + '</sheetData></worksheet>')
+    "xl/workbook.xml": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + workbookSheets + '</sheets><calcPr calcMode="auto"/></workbook>'),
+    "xl/_rels/workbook.xml.rels": new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + worksheetRelationships + '</Relationships>'),
   };
+  namedSheets.forEach((item, index) => {
+    files[`xl/worksheets/sheet${index + 1}.xml`] = new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + sheetXml(item.rows) + '</sheetData></worksheet>');
+  });
   return Buffer.from(zipSync(files, { level: 6 }));
 }
 

@@ -4,6 +4,10 @@
 
 - Node.js 22.5 or newer is required because the data store uses the built-in `node:sqlite` driver.
 - `KT_AGENT_DATA_DIR` selects the private data directory. The default is `.data/`.
+- Production responses set baseline browser security headers, including a
+  Content Security Policy. Deploy behind HTTPS. The current policy allows inline
+  scripts/styles for the application shell; move inline bootstrapping to nonce or
+  hash-based CSP before tightening that policy further.
 - The runtime database is `agent.sqlite`. On first startup, an existing `agent.json` is imported once and retained as a legacy copy. Keep a separate backup before moving a production data directory.
 - `npm run build` creates the production build. It uses webpack because the current Turbopack CSS worker fails during production builds in this environment.
 

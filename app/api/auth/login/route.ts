@@ -16,6 +16,7 @@ async function post(request: Request) {
       await appendAuditEvent({ actorId: null, action: "auth.login_failed", resourceType: "account", metadata: { accountHash: tokenHash(email) } });
       return NextResponse.json({ error: "Email немесе құпиясөз қате" }, { status: 401 });
     }
+    if (user.suspendedAt) return NextResponse.json({ error: "Бұл аккаунт әкімші тарапынан уақытша тоқтатылған" }, { status: 403, headers: { "Cache-Control": "private, no-store" } });
     if (user.emailVerifiedAt === null) return NextResponse.json({ error: "Кіру алдында email мекенжайын растаңыз" }, { status: 403, headers: { "Cache-Control": "private, no-store" } });
     const token = createSession(store, user, request);
     await writeStore(store);

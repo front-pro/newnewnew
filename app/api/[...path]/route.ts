@@ -67,6 +67,7 @@ async function handle(request: Request) {
       if (!admin || admin.role !== "admin" || adminToken) return fail("Бұл әрекет тек әкімшіге қолжетімді", 403);
       const target = store.users.find(person => person.email === String(body.email || "").toLowerCase());
       if (!target || target.id === admin.id) return fail("Пайдаланушы табылмады", 404);
+      if (target.suspendedAt) return fail("Тоқтатылған аккаунтты ашуға болмайды", 403);
       const impersonationToken = createSession(store, target, request);
       store.log.push({ owner: admin.email, type: "Әкімші аудиті", tone: "blue", title: `${target.email} аккаунтын қарау басталды`, meta: `${stamp()} · ${admin.email}` });
       await writeStore(store);
@@ -242,30 +243,33 @@ async function handle(request: Request) {
     if (path[0] === "users" && method === "GET") {
       if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
       const params = new URL(request.url).searchParams;
-      const pageSize = 20;
-      const page = Math.max(1, Math.min(100000, Number.parseInt(params.get("page") || "1", 10) || 1));
+      const pageSize = 20, page = Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1);
       const query = (params.get("q") || "").trim().toLocaleLowerCase();
-      const roleFilter = params.get("role") || "all", statusFilter = params.get("status") || "all", sort = params.get("sort") || "name";
-      const roleOrder = ["admin", "employee", "user"];
-      const filteredUsers = store.users.filter(person => {
-        const personRole = ["admin", "employee", "user"].includes(person.role) ? person.role : "user";
+      const roleFilter = params.get("role") || "all", statusFilter = params.get("status") || "all", accountFilter = params.get("account") || "all", sort = params.get("sort") || "name";
+      const roles = ["admin", "employee", "user"];
+      const matching = store.users.filter(person => {
+        const personRole = roles.includes(person.role) ? person.role : "user";
         return (!query || `${person.name || ""} ${person.email || ""}`.toLocaleLowerCase().includes(query))
           && (roleFilter === "all" || personRole === roleFilter)
-          && (statusFilter === "all" || (statusFilter === "verified") === !!person.emailVerifiedAt);
+          && (statusFilter === "all" || (statusFilter === "verified") === !!person.emailVerifiedAt)
+          && (accountFilter === "all" || (accountFilter === "suspended") === !!person.suspendedAt);
       }).sort((a, b) => {
-        const ar = ["admin", "employee", "user"].includes(a.role) ? a.role : "user", br = ["admin", "employee", "user"].includes(b.role) ? b.role : "user";
+        const roleA = roles.includes(a.role) ? a.role : "user", roleB = roles.includes(b.role) ? b.role : "user";
         const byName = (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }) || (a.email || "").localeCompare(b.email || "");
-        if (sort === "role" || sort === "role-desc") return (roleOrder.indexOf(ar) - roleOrder.indexOf(br)) * (sort === "role-desc" ? -1 : 1) || byName;
+        if (sort === "role" || sort === "role-desc") return (roles.indexOf(roleA) - roles.indexOf(roleB)) * (sort === "role-desc" ? -1 : 1) || byName;
         if (sort === "status" || sort === "status-desc") return (Number(!!b.emailVerifiedAt) - Number(!!a.emailVerifiedAt)) * (sort === "status-desc" ? -1 : 1) || byName;
         return byName;
       });
-      const total = filteredUsers.length;
-      const users = filteredUsers.slice((page - 1) * pageSize, page * pageSize).map(person => {
-        const email = person.email || "", userRole = ["admin", "employee", "user"].includes(person.role) ? person.role : "user";
-        return { id: person.id, name: person.name || email, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions: person.permissions }), emailVerified: !!person.emailVerifiedAt, avatar: person.avatar || null, company: person.company || "", position: person.position || "", documents: store.documents.filter(document => document.owner === email && !document.deletedAt).map(({ id: documentId, title, source, createdAt, updatedAt }) => ({ id: documentId, title, source, createdAt, updatedAt })), activity: store.log.filter(entry => entry.owner === email).slice(-20).reverse().map(({ type, title, meta, documentId }) => ({ type, title, meta, documentId })) };
+      const total = matching.length;
+      const rows = matching.slice((page - 1) * pageSize, page * pageSize);
+      const users = rows.map(({ id, name, email, role: storedRole, permissions, emailVerifiedAt, avatar, company, position, suspendedAt }) => {
+        const userRole = roles.includes(storedRole) ? storedRole : "user";
+        const activeSessions = Object.values(store.sessions).filter(session => sessionUserId(session) === id);
+        const lastSessionAt = activeSessions.map(session => typeof session === "string" ? "" : session.createdAt).filter(Boolean).sort().at(-1) || null;
+        return { id, name, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions }), emailVerified: !!emailVerifiedAt, suspendedAt: suspendedAt || null, activeSessionCount: activeSessions.length, lastSessionAt, avatar: avatar || null, company: company || "", position: position || "", documents: store.documents.filter(document => document.owner === email && !document.deletedAt).map(({ id: documentId, title, source, createdAt, updatedAt }) => ({ id: documentId, title, source, createdAt, updatedAt })), activity: store.log.filter(entry => entry.owner === email).slice(-20).reverse().map(({ type, title, meta, documentId }) => ({ type, title, meta, documentId })) };
       });
       const counts = { total: store.users.length, verified: store.users.filter(person => !!person.emailVerifiedAt).length, admin: store.users.filter(person => person.role === "admin").length, employee: store.users.filter(person => person.role === "employee").length };
-      return json({ users, total, page, pageSize, totalPages: Math.ceil(total / pageSize), counts });
+      return json({ users, total, page, pageSize, counts });
     }
     if (path[0] === "users" && path[1] && method === "PATCH") {
       if (!user || role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
@@ -274,8 +278,21 @@ async function handle(request: Request) {
       if (body.role !== undefined) {
         const nextRole = String(body.role); if (!["user", "employee", "admin"].includes(nextRole)) return fail("Рөл қате");
         if (email === user.email) return fail("Өз рөліңізді өзгертуге болмайды");
-        if (target.role === "admin" && nextRole !== "admin" && store.users.filter(item => item.role === "admin").length <= 1) return fail("Жүйеде кемінде бір әкімші қалуы керек", 409);
+        if (target.role === "admin" && nextRole !== "admin" && !target.suspendedAt && store.users.filter(item => item.role === "admin" && !item.suspendedAt).length <= 1) return fail("Жүйеде кемінде бір белсенді әкімші қалуы керек", 409);
         if (target.role !== nextRole) { target.role = nextRole as User["role"]; delete target.permissions; }
+      }
+      if (body.suspended !== undefined) {
+        if (typeof body.suspended !== "boolean") return fail("Аккаунт күйі қате");
+        if (target.id === user.id) return fail("Өз аккаунтыңызды тоқтата алмайсыз");
+        if (body.suspended && target.role === "admin" && !target.suspendedAt && store.users.filter(item => item.role === "admin" && !item.suspendedAt).length <= 1) return fail("Жүйеде кемінде бір белсенді әкімші қалуы керек", 409);
+        if (body.suspended && !target.suspendedAt) {
+          target.suspendedAt = new Date().toISOString();
+          for (const [token, session] of Object.entries(store.sessions)) if (sessionUserId(session) === target.id) delete store.sessions[token];
+          store.log.push({ owner: user.email, type: "Әкімші аудиті", tone: "rose", title: "Пайдаланушы аккаунты уақытша тоқтатылды", meta: `${stamp()} · ${target.email}` });
+        } else if (!body.suspended && target.suspendedAt) {
+          target.suspendedAt = null;
+          store.log.push({ owner: user.email, type: "Әкімші аудиті", tone: "blue", title: "Пайдаланушы аккаунты қайта қосылды", meta: `${stamp()} · ${target.email}` });
+        }
       }
       if (body.permissions !== undefined) {
         if (!Array.isArray(body.permissions) || body.permissions.some((value: unknown) => typeof value !== "string" || !accessModules.includes(value as typeof accessModules[number]))) return fail("Рұқсаттар тізімі қате");
@@ -283,7 +300,7 @@ async function handle(request: Request) {
         target.permissions = [...new Set(body.permissions as typeof accessModules[number][])];
       }
       await writeStore(store);
-      return json({ name: target.name, email: target.email, role: target.role, permissions: effectivePermissions(target), emailVerified: !!target.emailVerifiedAt });
+      return json({ name: target.name, email: target.email, role: target.role, permissions: effectivePermissions(target), emailVerified: !!target.emailVerifiedAt, suspendedAt: target.suspendedAt || null });
     }
     return fail("API маршрут табылмады", 404);
   } catch (error) { return apiError(error); }
