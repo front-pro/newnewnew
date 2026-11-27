@@ -65,7 +65,7 @@ export default function CompanyWorkspacePage({ props }: { props: WorkspaceProps 
     if (module === "audit" && company?.role === "admin") return <CompanyAuditPage workspaceId={company.id} />;
     if (module === "templates") return <CompanyTemplatesPage props={props} />;
     if (module === "analysis") return <CompanyAnalysisPage props={props} />;
-    if (module === "processes") return <ApprovalInbox setNotice={props.setNotice} />;
+    if (module === "processes" && company) return <ApprovalInbox setNotice={props.setNotice} workspaceId={company.id} />;
     return null;
   };
 
