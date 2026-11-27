@@ -7,7 +7,7 @@ export function defaultPermissions(role: string): AccessModule[] {
 }
 
 export function effectivePermissions(user: { role: string; permissions?: AccessModule[] | null }): AccessModule[] {
-  return user.role === "admin" ? [...allModules] : user.permissions ? user.permissions.filter((value): value is AccessModule => accessModules.includes(value)) : defaultPermissions(user.role);
+  return user.role === "admin" ? [...allModules] : Array.isArray(user.permissions) ? user.permissions.filter((value): value is AccessModule => accessModules.includes(value)) : defaultPermissions(user.role);
 }
 
 export function canAccessModule(user: { role: string; permissions?: AccessModule[] | null } | null | undefined, module: string): boolean {

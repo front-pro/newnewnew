@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
+import Icon from "./Icon";
 import { useLanguage } from "./LanguageProvider";
 import { button, card } from "./styles";
 import type { WorkspaceProps } from "./workspace-context";
 
 export default function AuthDialog({ props }: { props: WorkspaceProps }) {
   const { tr } = useLanguage();
+  const [showPassword, setShowPassword] = useState(false);
   const { authMode, setAuthMode, submitAuth, authName, setAuthName, authEmail, setAuthEmail, authPassword, setAuthPassword, authToken, setAuthToken, authBusy, resendVerification } = props;
   if (!authMode) return null;
   const title = authMode === "register" ? "Тіркелу" : authMode === "verify" ? "Email растау" : authMode === "reset" ? "Құпиясөзді қалпына келтіру" : authMode === "reset-confirm" ? "Жаңа құпиясөз" : "Жүйеге кіру";
@@ -22,7 +25,7 @@ export default function AuthDialog({ props }: { props: WorkspaceProps }) {
         {authMode === "register" && <label className="block space-y-1 text-sm font-medium">{tr("Аты-жөні")}<input required maxLength={100} autoComplete="name" value={authName} onChange={event => setAuthName(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-blue-500" /></label>}
         <label className="block space-y-1 text-sm font-medium">Email<input required type="email" autoComplete="email" value={authEmail} onChange={event => setAuthEmail(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-blue-500" /></label>
         {needsToken && <label className="block space-y-1 text-sm font-medium">{tr(authMode === "verify" ? "Растау коды" : "Қалпына келтіру коды")}<input required autoComplete="one-time-code" value={authToken} onChange={event => setAuthToken(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono font-normal outline-none focus:border-blue-500" /></label>}
-        {needsPassword && <label className="block space-y-1 text-sm font-medium">{tr(authMode === "reset-confirm" ? "Жаңа құпиясөз" : "Құпиясөз")}<input required minLength={8} maxLength={1024} type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} value={authPassword} onChange={event => setAuthPassword(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-blue-500" />{(authMode === "register" || authMode === "reset-confirm") && <span className="text-xs font-normal text-slate-500">{tr("Кемінде 8 таңба")}</span>}</label>}
+        {needsPassword && <label className="block space-y-1 text-sm font-medium">{tr(authMode === "reset-confirm" ? "Жаңа құпиясөз" : "Құпиясөз")}<span className="relative block"><input required minLength={8} maxLength={1024} type={showPassword ? "text" : "password"} autoComplete={authMode === "login" ? "current-password" : "new-password"} value={authPassword} onChange={event => setAuthPassword(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 pr-11 font-normal outline-none focus:border-blue-500" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={tr(showPassword ? "Құпиясөзді жасыру" : "Құпиясөзді көрсету" )} aria-pressed={showPassword} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-500 hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"><Icon name={showPassword ? "eyeOff" : "eye"} className="size-5"/></button></span>{(authMode === "register" || authMode === "reset-confirm") && <span className="text-xs font-normal text-slate-500">{tr("Кемінде 8 таңба")}</span>}</label>}
         <button disabled={authBusy} className={`${button} w-full bg-blue-600 text-white hover:bg-blue-700`}>{authBusy ? tr("Күте тұрыңыз…") : tr(authMode === "register" ? "Аккаунт жасау" : authMode === "verify" ? "Email-ды растау" : authMode === "reset" ? "Қалпына келтіру кодын алу" : authMode === "reset-confirm" ? "Құпиясөзді сақтау" : "Кіру")}</button>
       </form>
       {authMode === "verify" && <button disabled={authBusy} onClick={() => void resendVerification()} className="w-full text-sm font-semibold text-blue-700 hover:underline">{tr("Растау кодын қайта жіберу")}</button>}

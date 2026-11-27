@@ -149,8 +149,10 @@ function Workspace() {
         }
         if (user.role === "admin") {
             const response = await fetch("/api/users");
-            if (response.ok)
-                setUsers(await response.json());
+            if (response.ok) {
+                const data = await response.json();
+                setUsers(Array.isArray(data) ? data : data.users || []);
+            }
         }
     }, []);
     const restoreAccountDocument = useCallback(async () => {

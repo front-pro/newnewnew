@@ -239,7 +239,34 @@ async function handle(request: Request) {
       await writeStore(store);
       return json({ ok: true });
     }
-    if (path[0] === "users" && method === "GET") { if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401); return json(store.users.map(({ id, name, email, role: userRole, permissions, emailVerifiedAt, avatar, company, position }) => ({ id, name, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions }), emailVerified: !!emailVerifiedAt, avatar: avatar || null, company: company || "", position: position || "", documents: store.documents.filter(document => document.owner === email && !document.deletedAt).map(({ id: documentId, title, source, createdAt, updatedAt }) => ({ id: documentId, title, source, createdAt, updatedAt })), activity: store.log.filter(entry => entry.owner === email).slice(-20).reverse().map(({ type, title, meta, documentId }) => ({ type, title, meta, documentId })) }))); }
+    if (path[0] === "users" && method === "GET") {
+      if (role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
+      const params = new URL(request.url).searchParams;
+      const pageSize = 20;
+      const page = Math.max(1, Math.min(100000, Number.parseInt(params.get("page") || "1", 10) || 1));
+      const query = (params.get("q") || "").trim().toLocaleLowerCase();
+      const roleFilter = params.get("role") || "all", statusFilter = params.get("status") || "all", sort = params.get("sort") || "name";
+      const roleOrder = ["admin", "employee", "user"];
+      const filteredUsers = store.users.filter(person => {
+        const personRole = ["admin", "employee", "user"].includes(person.role) ? person.role : "user";
+        return (!query || `${person.name || ""} ${person.email || ""}`.toLocaleLowerCase().includes(query))
+          && (roleFilter === "all" || personRole === roleFilter)
+          && (statusFilter === "all" || (statusFilter === "verified") === !!person.emailVerifiedAt);
+      }).sort((a, b) => {
+        const ar = ["admin", "employee", "user"].includes(a.role) ? a.role : "user", br = ["admin", "employee", "user"].includes(b.role) ? b.role : "user";
+        const byName = (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }) || (a.email || "").localeCompare(b.email || "");
+        if (sort === "role" || sort === "role-desc") return (roleOrder.indexOf(ar) - roleOrder.indexOf(br)) * (sort === "role-desc" ? -1 : 1) || byName;
+        if (sort === "status" || sort === "status-desc") return (Number(!!b.emailVerifiedAt) - Number(!!a.emailVerifiedAt)) * (sort === "status-desc" ? -1 : 1) || byName;
+        return byName;
+      });
+      const total = filteredUsers.length;
+      const users = filteredUsers.slice((page - 1) * pageSize, page * pageSize).map(person => {
+        const email = person.email || "", userRole = ["admin", "employee", "user"].includes(person.role) ? person.role : "user";
+        return { id: person.id, name: person.name || email, email, role: userRole, permissions: effectivePermissions({ role: userRole, permissions: person.permissions }), emailVerified: !!person.emailVerifiedAt, avatar: person.avatar || null, company: person.company || "", position: person.position || "", documents: store.documents.filter(document => document.owner === email && !document.deletedAt).map(({ id: documentId, title, source, createdAt, updatedAt }) => ({ id: documentId, title, source, createdAt, updatedAt })), activity: store.log.filter(entry => entry.owner === email).slice(-20).reverse().map(({ type, title, meta, documentId }) => ({ type, title, meta, documentId })) };
+      });
+      const counts = { total: store.users.length, verified: store.users.filter(person => !!person.emailVerifiedAt).length, admin: store.users.filter(person => person.role === "admin").length, employee: store.users.filter(person => person.role === "employee").length };
+      return json({ users, total, page, pageSize, totalPages: Math.ceil(total / pageSize), counts });
+    }
     if (path[0] === "users" && path[1] && method === "PATCH") {
       if (!user || role !== "admin") return fail("Бұл бөлім тек әкімшіге арналған", user ? 403 : 401);
       const email = path[1], body = await request.json(); if (!body || typeof body !== "object" || Array.isArray(body)) return fail("Сұрау объект болуы керек");
