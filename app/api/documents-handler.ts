@@ -186,6 +186,16 @@ export async function handleDocuments(request: Request, path: string[], store: S
     await appendAuditEvent({ workspaceId: document.workspaceId, actorId: user.id, action: "document.read_shares", resourceType: "document", resourceId: document.id });
     return json(document.shares || []);
   }
+  if (path.length === 2 && path[1] === "share-preview" && method === "GET") {
+    const document = store.documents.find(item => item.id === path[0] && permission(item) === "owner");
+    if (!document) return fail("Құжат табылмады", 404);
+    const email = (url.searchParams.get("email") || "").trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) return fail("Email пішімі қате");
+    const recipient = store.users.find(item => item.email === email);
+    const member = !document.workspaceId || !!recipient && store.memberships.some(item => item.workspaceId === document.workspaceId && item.userId === recipient.id);
+    const current = document.shares?.find(item => item.email === email)?.permission || "none";
+    return json({ exists: !!recipient, member, current });
+  }
   if (path.length === 2 && path[1] === "shares" && method === "POST") {
     const document = store.documents.find(item => item.id === path[0] && permission(item) === "owner");
     if (!document) return fail("Құжат табылмады", 404);
@@ -195,6 +205,10 @@ export async function handleDocuments(request: Request, path: string[], store: S
     const access = body?.permission;
     if (!/^\S+@\S+\.\S+$/.test(email) || !["viewer", "commenter", "editor"].includes(access)) return fail("Email немесе құжат рұқсаты қате");
     if (!store.users.some(item => item.email === email)) return fail("Бұл email арқылы тіркелген пайдаланушы табылмады", 404);
+    if (document.workspaceId) {
+      const recipient = store.users.find(item => item.email === email)!;
+      if (!store.memberships.some(item => item.workspaceId === document.workspaceId && item.userId === recipient.id)) return fail("Алдымен пайдаланушыны компанияға шақырыңыз", 409);
+    }
     document.shares = (document.shares || []).filter(item => item.email !== email);
     document.shares.push({ email, permission: access });
     await writeStore(store);
