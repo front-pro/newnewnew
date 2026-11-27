@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
 import { useLanguage } from "./LanguageProvider";
 import Icon, { type IconName } from "./Icon";
 import type { WorkspaceProps } from "./workspace-context";
@@ -10,8 +10,9 @@ import CompanyAuditPage from "./CompanyAuditPage";
 import CompaniesPage from "./CompaniesPage";
 import CompanyTemplatesPage from "./CompanyTemplatesPage";
 import DocumentsPage from "./DocumentsPage";
+import CompanyOverview from "./CompanyOverview";
 
-type Module = "documents" | "analysis" | "templates" | "team" | "processes" | "audit";
+type Module = "overview" | "documents" | "analysis" | "templates" | "team" | "processes" | "audit";
 type PanelSide = "left" | "right";
 const MIN_PANEL_WIDTH = 190;
 const MAX_PANEL_WIDTH = 420;
@@ -25,7 +26,9 @@ export default function CompanyWorkspacePage({ props }: { props: WorkspaceProps 
   const [panelSide, setPanelSide] = useState<PanelSide>("left");
   const resizing = useRef(false);
   const company = props.workspaces.find(item => item.id === props.activeWorkspaceId);
+  useEffect(() => { setModule(company?.role === "admin" ? "overview" : "documents"); }, [company?.id, company?.role]);
   const modules: [Module, string, IconName][] = [
+    ...(company?.role === "admin" ? [["overview", "Әкімші шолуы", "settings"] as [Module, string, IconName]] : []),
     ["documents", "Құжаттар тізілімі", "file"],
     ["analysis", "Құжаттарды салыстыру", "compare"],
     ["templates", "Құжат үлгілері", "template"],
@@ -56,6 +59,7 @@ export default function CompanyWorkspacePage({ props }: { props: WorkspaceProps 
   }
 
   const content = () => {
+    if (module === "overview" && company?.role === "admin") return <CompanyOverview workspaceId={company.id} companyName={company.name} props={props} onNavigate={next => { setModule(next); setPanelOpen(true); }} />;
     if (module === "documents") return <DocumentsPage key={`company-${company?.id}`} props={props} workspaceScope={company?.id || null} />;
     if (module === "team" && company) return <CompaniesPage fixedWorkspaceId={company.id} setNotice={props.setNotice} />;
     if (module === "audit" && company?.role === "admin") return <CompanyAuditPage workspaceId={company.id} />;
