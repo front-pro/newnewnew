@@ -32,7 +32,7 @@ export default function CompanyOverview({ workspaceId, companyName, props, onNav
         if (!response.ok) throw new Error(data.error || tr("Құжаттарды жүктеу мүмкін болмады."));
         return Array.isArray(data) ? data as DocumentSummary[] : [];
       }),
-      fetch("/api/approvals", { cache: "no-store", signal: controller.signal }).then(async response => response.ok ? response.json() as Promise<ApprovalRow[]> : []),
+      fetch(`/api/approvals?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store", signal: controller.signal }).then(async response => response.ok ? response.json() as Promise<ApprovalRow[]> : []),
     ]).then(([rows, approvals]) => {
       if (controller.signal.aborted) return;
       setDocuments(rows);

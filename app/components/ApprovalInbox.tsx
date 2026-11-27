@@ -11,21 +11,22 @@ export default function ApprovalInbox({ setNotice, workspaceId }: Pick<Workspace
   const { tr, locale } = useLanguage();
   const [flows, setFlows] = useState<Approval[]>([]), [busy, setBusy] = useState(""), [reasons, setReasons] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
+  const endpoint = workspaceId ? `/api/approvals?workspaceId=${encodeURIComponent(workspaceId)}` : "/api/approvals";
   const load = useCallback(async () => {
-    const response = await fetch("/api/approvals", { cache: "no-store" });
+    const response = await fetch(endpoint, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || tr("Бекітулерді жүктеу мүмкін болмады."));
     setFlows(data);
-  }, [tr]);
+  }, [endpoint, tr]);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/approvals", { cache: "no-store", signal: controller.signal }).then(async response => {
+    fetch(endpoint, { cache: "no-store", signal: controller.signal }).then(async response => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || tr("Бекітулерді жүктеу мүмкін болмады."));
       if (!controller.signal.aborted) setFlows(data);
     }).catch(error => { if (!controller.signal.aborted) setNotice(error instanceof Error ? tr(error.message) : tr("Қате шықты")); });
     return () => controller.abort();
-  }, [setNotice, tr]);
+  }, [endpoint, setNotice, tr]);
   async function decide(flow: Approval, decision: "approve" | "reject") {
     setBusy(flow.id);
     try {

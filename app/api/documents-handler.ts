@@ -342,7 +342,8 @@ export async function handleApprovalRequest(request: Request, path: string[]) {
   const store = await readStore(), user = await currentUser(request, store);
   if (!user) return fail("Жүйеге кіріңіз", 401);
   if (!path.length && request.method === "GET") {
-    const assigned = store.approvals.filter(flow => flow.steps.some(step => step.approverId === user.id));
+    const workspaceFilter = new URL(request.url).searchParams.get("workspaceId");
+    const assigned = store.approvals.filter(flow => flow.steps.some(step => step.approverId === user.id) && (!workspaceFilter || flow.workspaceId === workspaceFilter));
     return json(assigned.map(flow => {
       const document = store.documents.find(item => item.id === flow.documentId);
       const step = flow.steps.find(item => item.approverId === user.id);
