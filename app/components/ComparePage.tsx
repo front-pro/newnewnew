@@ -11,11 +11,15 @@ export default function ComparePage({ props }: { props: WorkspaceProps }) {
     { key: "before", title: "Құжат A (Редакция «Дейін») ", value: a, setValue: setA },
     { key: "after", title: "Құжат B (Редакция «Кейін») ", value: b, setValue: setB },
   ];
+  function loadDemo() {
+    setA("Қызмет көрсету шарты\n1. Қызмет мерзімі: 12 ай.\n2. Төлем: ай сайын, 100 000 теңге.\n3. Кешігу айыбы: 0,1%.");
+    setB("Қызмет көрсету шарты\n1. Қызмет мерзімі: 18 ай.\n2. Төлем: ай сайын, 120 000 теңге.\n3. Кешігу айыбы: 0,5%.\n4. Шартты бұзу туралы 30 күн бұрын хабарлау қажет.");
+  }
 
   return <div className="space-y-6">
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div><h1 className="text-3xl font-bold">{tr("Құжаттарды семантикалық салыстыру")}</h1><p className="mt-1 text-slate-500">{tr("«Дейін» және «Кейін» редакцияларын талдау")}</p></div>
-      <div className="flex flex-wrap gap-2"><button disabled={props.analysisBusy} onClick={() => startAnalysis(false)} className={`${button} bg-blue-600 px-4 py-3 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60`}>{props.analysisBusy ? tr("Талдау орындалуда…") : "⚡ " + tr("Талдауды іске қосу")}</button><button disabled={props.analysisBusy} title={props.sessionUser ? tr("ИИ талдауы кезінде A және B мәтіні OpenAI API-ге талдау үшін жіберіледі.") : tr("ИИ агентпен жұмыс істеу үшін аккаунтқа кіріңіз.")} onClick={() => props.sessionUser ? startAnalysis(true) : props.setAuthMode("login")} className={`${button} gap-2 border border-violet-200 bg-violet-50 px-4 py-3 text-violet-800 disabled:opacity-60`}>✦ {tr("ИИ агентпен толық талдау")}</button><p className="basis-full text-xs text-slate-500">{props.sessionUser ? tr("ИИ талдауы кезінде A және B мәтіні OpenAI API-ге талдау үшін жіберіледі.") : tr("ИИ агентпен жұмыс істеу үшін аккаунтқа кіріңіз.")}</p></div>
+      <div className="flex flex-wrap gap-2"><button disabled={props.analysisBusy} onClick={() => startAnalysis(false)} className={`${button} bg-blue-600 px-4 py-3 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60`}>{props.analysisBusy ? tr("Талдау орындалуда…") : "⚡ " + tr("Талдауды іске қосу")}</button><button disabled={props.analysisBusy} onClick={loadDemo} className={`${button} border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800`}>{tr("Демо деректерін жүктеу")}</button><button disabled={props.analysisBusy} title={props.sessionUser ? tr("ИИ талдауы кезінде A және B мәтіні OpenAI API-ге талдау үшін жіберіледі.") : tr("ИИ агентпен жұмыс істеу үшін аккаунтқа кіріңіз.")} onClick={() => props.sessionUser ? startAnalysis(true) : props.setAuthMode("login")} className={`${button} gap-2 border border-violet-200 bg-violet-50 px-4 py-3 text-violet-800 disabled:opacity-60`}>✦ {tr("ИИ агентпен толық талдау")}</button><p className="basis-full text-xs text-slate-500">{tr("Демо мәтін тек осы салыстыруға жүктеледі, құжаттар тізіміне сақталмайды.")}</p><p className="basis-full text-xs text-slate-500">{props.sessionUser ? tr("ИИ талдауы кезінде A және B мәтіні OpenAI API-ге талдау үшін жіберіледі.") : tr("ИИ агентпен жұмыс істеу үшін аккаунтқа кіріңіз.")}</p></div>
     </header>
 
     <div className="grid gap-6 md:grid-cols-2">{inputs.map(input => <section key={input.key} className={`${card} space-y-3`}>
