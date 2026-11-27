@@ -176,7 +176,7 @@ export async function readWorkspaceAudit(workspaceId: string, limit = 100) {
 }
 export async function readUserAudit(actorId: string, limit = 30) {
   const db = await getDatabase();
-  return db.prepare("SELECT id, action, resource_type AS resourceType, resource_id AS resourceId, created_at AS createdAt, metadata FROM audit_events WHERE actor_id = ? ORDER BY created_at DESC LIMIT ?").all(actorId, Math.max(1, Math.min(100, limit))).map((row: unknown) => {
+  return db.prepare("SELECT id, action, resource_type AS resourceType, resource_id AS resourceId, created_at AS createdAt, metadata FROM audit_events WHERE actor_id = ? ORDER BY created_at DESC LIMIT ?").all(actorId, Math.max(1, Math.min(5000, limit))).map((row: unknown) => {
     const event = row as { metadata: string; [key: string]: unknown };
     return { ...event, metadata: JSON.parse(event.metadata) };
   });

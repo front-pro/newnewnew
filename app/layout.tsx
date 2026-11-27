@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KT Neural Document Agent",
-  description: "Құжаттарды салыстыру және үлгілерді өңдеу жүйесі",
+  title: "KT Docs — құжаттарды басқару және салыстыру",
+  description: "Құжаттарды сақтаңыз, нұсқаларын салыстырыңыз, командамен қарап бекітіңіз.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
