@@ -1,12 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useLanguage } from "./LanguageProvider";
 import { button, card } from "./styles";
 import type { WorkspaceProps } from "./workspace-context";
 
 export default function ComparePage({ props }: { props: WorkspaceProps }) {
   const { tr } = useLanguage();
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [demoLoaded, setDemoLoaded] = useState(false);
   const { a, setA, b, setB, report, startAnalysis, handleFile, exportReport } = props;
+  useEffect(() => { if (demoLoaded && report && !props.analysisBusy) setDemoOpen(true); }, [demoLoaded, report, props.analysisBusy]);
   const inputs = [
     { key: "before", title: "Құжат A (Редакция «Дейін») ", value: a, setValue: setA },
     { key: "after", title: "Құжат B (Редакция «Кейін») ", value: b, setValue: setB },
@@ -14,9 +18,12 @@ export default function ComparePage({ props }: { props: WorkspaceProps }) {
   function loadDemo() {
     setA("Қызмет көрсету шарты\n1. Қызмет мерзімі: 12 ай.\n2. Төлем: ай сайын, 100 000 теңге.\n3. Кешігу айыбы: 0,1%.");
     setB("Қызмет көрсету шарты\n1. Қызмет мерзімі: 18 ай.\n2. Төлем: ай сайын, 120 000 теңге.\n3. Кешігу айыбы: 0,5%.\n4. Шартты бұзу туралы 30 күн бұрын хабарлау қажет.");
+    setDemoLoaded(true);
+    setDemoOpen(true);
   }
 
   return <div className="space-y-6">
+    {demoOpen && <aside className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">{tr("Бір минуттық таныстыру")}</h2><ol className="mt-2 list-inside list-decimal space-y-1 text-blue-900"><li>{tr(demoLoaded ? "Мысал мәтіндері A және B жолына жүктелді." : "A және B нұсқаларын салыстырыңыз.")}</li><li>{tr(report && demoLoaded ? "Өзгерістерді қарап, дәлел мәтіндерін тексеріңіз." : "Талдауды іске қосып айырмашылықтарды көріңіз.")}</li><li>{tr("Өзгерістерді қабылдап не қабылдамай, соңында есепті экспорттаңыз.")}</li></ol></div><button onClick={() => setDemoOpen(false)} className="rounded-lg px-2 py-1 text-blue-700 hover:bg-blue-100">{tr("Жабу")}</button></div></aside>}
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div><h1 className="text-3xl font-bold">{tr("Құжаттарды семантикалық салыстыру")}</h1><p className="mt-1 text-slate-500">{tr("«Дейін» және «Кейін» редакцияларын талдау")}</p></div>
       <div className="flex flex-wrap gap-2"><button disabled={props.analysisBusy} onClick={() => startAnalysis(false)} className={`${button} bg-blue-600 px-4 py-3 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60`}>{props.analysisBusy ? tr("Талдау орындалуда…") : "⚡ " + tr("Талдауды іске қосу")}</button><button disabled={props.analysisBusy} onClick={loadDemo} className={`${button} border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800`}>{tr("Демо деректерін жүктеу")}</button><button disabled={props.analysisBusy} title={props.sessionUser ? tr("ИИ талдауы кезінде A және B мәтіні OpenAI API-ге талдау үшін жіберіледі.") : tr("ИИ агентпен жұмыс істеу үшін аккаунтқа кіріңіз.")} onClick={() => props.sessionUser ? startAnalysis(true) : props.setAuthMode("login")} className={`${button} gap-2 border border-violet-200 bg-violet-50 px-4 py-3 text-violet-800 disabled:opacity-60`}>✦ {tr("ИИ агентпен толық талдау")}</button><p className="basis-full text-xs text-slate-500">{tr("Демо мәтін тек осы салыстыруға жүктеледі, құжаттар тізіміне сақталмайды.")}</p><p className="basis-full text-xs text-slate-500">{props.sessionUser ? tr("ИИ талдауы кезінде A және B мәтіні OpenAI API-ге талдау үшін жіберіледі.") : tr("ИИ агентпен жұмыс істеу үшін аккаунтқа кіріңіз.")}</p></div>
